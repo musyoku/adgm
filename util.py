@@ -7,28 +7,31 @@ from PIL import Image
 from chainer import cuda, Variable, function
 from chainer.utils import type_check
 from sklearn import preprocessing
-import matplotlib.patches as mpatches
+import matplotlib
 
-def load_images(image_dir, convert_to_grayscale=True):
+def load_images(image_dir, convert_to_grayscale=True, dist="bernoulli"):
 	dataset = []
 	fs = os.listdir(image_dir)
-	i = 0
+	print "loading", len(fs), "images..."
 	for fn in fs:
 		f = open("%s/%s" % (image_dir, fn), "rb")
 		if convert_to_grayscale:
 			img = np.asarray(Image.open(StringIO(f.read())).convert("L"), dtype=np.float32) / 255.0
 		else:
 			img = np.asarray(Image.open(StringIO(f.read())).convert("RGB"), dtype=np.float32).transpose(2, 0, 1) / 255.0
+		if dist == "bernoulli":
+			# Sampling
+			img = preprocessing.binarize(img, threshold=0.5)
+			pass
+		elif dist == "gaussian":
+			pass
+		else:
+			raise Exception()
 		dataset.append(img)
 		f.close()
-		i += 1
-		if i % 100 == 0:
-			sys.stdout.write("\rloading images...({:d} / {:d})".format(i, len(fs)))
-			sys.stdout.flush()
-	sys.stdout.write("\n")
 	return dataset
 
-def load_labeled_images(image_dir, convert_to_grayscale=True):
+def load_labeled_images(image_dir, convert_to_grayscale=True, dist="bernoulli"):
 	dataset = []
 	labels = []
 	fs = os.listdir(image_dir)
@@ -41,6 +44,14 @@ def load_labeled_images(image_dir, convert_to_grayscale=True):
 			img = np.asarray(Image.open(StringIO(f.read())).convert("L"), dtype=np.float32) / 255.0
 		else:
 			img = np.asarray(Image.open(StringIO(f.read())).convert("RGB"), dtype=np.float32).transpose(2, 0, 1) / 255.0
+		if dist == "bernoulli":
+			# Sampling
+			img = preprocessing.binarize(img, threshold=0.5)
+			pass
+		elif dist == "gaussian":
+			pass
+		else:
+			raise Exception()
 		dataset.append(img)
 		labels.append(label)
 		f.close()

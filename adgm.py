@@ -21,10 +21,12 @@ class Conf():
 		self.image_width = 28
 		self.image_height = 28
 		self.ndim_x = 28 * 28
+		self.distribution_x = "bernoulli"
 		self.ndim_y = 10
 		self.ndim_z = 100
 		self.ndim_a = 100
 		self.n_mc_samples = 10
+		self.wscale = 0.1
 
 		# True : y = f(BN(Wx + b))
 		# False: y = f(W*BN(x) + b)
@@ -192,7 +194,7 @@ class ADGM():
 				encoder_x_a_attributes["batchnorm_%i" % i] = L.BatchNormalization(n_in)
 		encoder_x_a_attributes["layer_output_mean"] = L.Linear(conf.encoder_x_a_hidden_units[-1], conf.ndim_a, wscale=conf.wscale)
 		encoder_x_a_attributes["layer_output_var"] = L.Linear(conf.encoder_x_a_hidden_units[-1], conf.ndim_a, wscale=conf.wscale)
-		encoder_x_a = GaussianEncoder(**encoder_x_a_attributes)
+		encoder_x_a = SingleInputGaussianEncoder(**encoder_x_a_attributes)
 		encoder_x_a.n_layers = len(encoder_x_a_units)
 		encoder_x_a.activation_function = conf.encoder_x_a_activation_function
 		encoder_x_a.apply_dropout = conf.encoder_x_a_apply_dropout
@@ -206,6 +208,7 @@ class ADGM():
 		return encoder_x_a
 
 	def build_decoder(self):
+		conf = self.conf
 		decoder_attributes = {}
 		decoder_units = zip(conf.decoder_hidden_units[:-1], conf.decoder_hidden_units[1:])
 		decoder_units += [(conf.decoder_hidden_units[-1], conf.ndim_x)]
@@ -218,7 +221,11 @@ class ADGM():
 		decoder_attributes["layer_merge_z"] = L.Linear(conf.ndim_z, conf.decoder_hidden_units[0], wscale=conf.wscale)
 		decoder_attributes["layer_merge_y"] = L.Linear(conf.ndim_y, conf.decoder_hidden_units[0], wscale=conf.wscale)
 		decoder_attributes["batchnorm_merge"] = L.BatchNormalization(conf.decoder_hidden_units[0])
-		decoder = BernoulliDecoder(**decoder_attributes)
+
+		if conf.distribution_x == "bernoulli":
+			decoder = BernoulliDecoder(**decoder_attributes)
+		else:
+			decoder = GaussianDecoder(**decoder_attributes)
 		decoder.n_layers = len(decoder_units)
 		decoder.activation_function = conf.decoder_activation_function
 		decoder.apply_dropout = conf.decoder_apply_dropout
@@ -456,7 +463,7 @@ class ADGM():
 			z_u_ext = F.gaussian(z_mean_u_ext, z_mean_ln_var_u_ext)
 
 			log_px_zy_u = self.log_px_yz(unlabeled_x_ext, z_u_ext, y_ext, test=test)
-			log_py_u = self.log_py(y_ext, test=test)
+			log_py_u = self.log_py(y_ext)
 			log_pz_u = self.log_pz(z_u_ext)
 			log_pa_u = self.log_pa(a_u_ext)
 			log_qz_xy_u = self.log_qz_xy(z_u_ext, z_mean_u_ext, z_mean_ln_var_u_ext)
@@ -584,9 +591,9 @@ class SoftmaxEncoder(chainer.Chain):
 			return F.softmax(output)
 		return output
 
-class GaussianEncoder(chainer.Chain):
+class SingleInputGaussianEncoder(chainer.Chain):
 	def __init__(self, **layers):
-		super(GaussianEncoder, self).__init__(**layers)
+		super(SingleInputGaussianEncoder, self).__init__(**layers)
 		self.activation_function = "softplus"
 		self.apply_batchnorm_to_input = True
 		self.apply_batchnorm = True
@@ -597,9 +604,43 @@ class GaussianEncoder(chainer.Chain):
 	def xp(self):
 		return np if self._cpu else cuda.cupy
 
-	def forward_one_step(self, x, y, test=False, apply_f=True):
+	def forward_one_step(self, x, test=False, apply_f=True):
 		f = activations[self.activation_function]
+		chain = [x]
 
+		# Hidden
+		for i in range(self.n_layers):
+			u = chain[-1]
+			if self.batchnorm_before_activation:
+				u = getattr(self, "layer_%i" % i)(u)
+			if self.apply_batchnorm:
+				u = getattr(self, "batchnorm_%d" % i)(u, test=test)
+			if self.batchnorm_before_activation == False:
+				u = getattr(self, "layer_%i" % i)(u)
+			output = f(u)
+			if self.apply_dropout:
+				output = F.dropout(output, train=not test)
+			chain.append(output)
+
+		u = chain[-1]
+		mean = self.layer_output_mean(u)
+
+		# log(sd^2)
+		u = chain[-1]
+		ln_var = self.layer_output_var(u)
+
+		return mean, ln_var
+
+	def __call__(self, x, test=False, apply_f=True):
+		mean, ln_var = self.forward_one_step(x, test=test, apply_f=apply_f)
+		if apply_f:
+			return F.gaussian(mean, ln_var)
+		return mean, ln_var
+
+class GaussianEncoder(SingleInputGaussianEncoder):
+
+	def merge_input(self, x, y, test=False):
+		f = activations[self.activation_function]
 		if self.apply_batchnorm_to_input:
 			if self.batchnorm_before_activation:
 				merged_input = f(self.batchnorm_merge(self.layer_merge_x(x) + self.layer_merge_y(y), test=test))
@@ -608,16 +649,22 @@ class GaussianEncoder(chainer.Chain):
 		else:
 			merged_input = f(self.layer_merge_x(x) + self.layer_merge_y(y))
 
+		return merged_input
+
+	def forward_one_step(self, x, y, test=False, apply_f=True):
+		f = activations[self.activation_function]
+
+		merged_input = self.merge_input(x, y, test=test)
 		chain = [merged_input]
 
 		# Hidden
 		for i in range(self.n_layers):
 			u = chain[-1]
-			if batchnorm_before_activation:
+			if self.batchnorm_before_activation:
 				u = getattr(self, "layer_%i" % i)(u)
 			if self.apply_batchnorm:
 				u = getattr(self, "batchnorm_%d" % i)(u, test=test)
-			if batchnorm_before_activation == False:
+			if self.batchnorm_before_activation == False:
 				u = getattr(self, "layer_%i" % i)(u)
 			output = f(u)
 			if self.apply_dropout:
@@ -639,8 +686,19 @@ class GaussianEncoder(chainer.Chain):
 			return F.gaussian(mean, ln_var)
 		return mean, ln_var
 
-# Network structure is same as the GaussianEncoder
 class GaussianDecoder(GaussianEncoder):
+
+	def merge_input(self, z, y, test=False):
+		f = activations[self.activation_function]
+		if self.apply_batchnorm_to_input:
+			if self.batchnorm_before_activation:
+				merged_input = f(self.batchnorm_merge(self.layer_merge_z(z) + self.layer_merge_y(y), test=test))
+			else:
+				merged_input = f(self.layer_merge_z(self.batchnorm_merge(z, test=test)) + self.layer_merge_y(y))
+		else:
+			merged_input = f(self.layer_merge_z(z) + self.layer_merge_y(y))
+
+		return merged_input
 
 	def __call__(self, z, y, test=False, apply_f=False):
 		mean, ln_var = self.forward_one_step(z, y, test=test, apply_f=False)
