@@ -11,9 +11,9 @@ from model import conf, adgm
 dataset, labels = util.load_labeled_images(args.train_image_dir, dist=conf.distribution_x)
 
 max_epoch = 1000
-n_trains_per_epoch = 2000
+n_trains_per_epoch = 300
 batchsize_l = 100
-batchsize_u = 100
+batchsize_u = 200
 
 # Create labeled/unlabeled split in training set
 n_types_of_label = 10

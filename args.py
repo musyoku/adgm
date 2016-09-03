@@ -11,4 +11,6 @@ parser.add_argument("--vis_dir", type=str, default="visualization")
 
 # for semi-supervised learning
 parser.add_argument("--n_labeled_data", type=int, default=100)
+
+parser.add_argument("--n_mc_samples", type=int, default=1)
 args = parser.parse_args()

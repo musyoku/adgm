@@ -166,9 +166,9 @@ class ADGM():
 			else:
 				encoder_ax_y_attributes["batchnorm_%i" % i] = L.BatchNormalization(n_in)
 		encoder_ax_y_attributes["layer_merge_x"] = L.Linear(conf.ndim_x, conf.encoder_ax_y_hidden_units[0], wscale=conf.wscale)
-		encoder_ax_y_attributes["layer_merge_y"] = L.Linear(conf.ndim_y, conf.encoder_ax_y_hidden_units[0], wscale=conf.wscale)
+		encoder_ax_y_attributes["layer_merge_a"] = L.Linear(conf.ndim_a, conf.encoder_ax_y_hidden_units[0], wscale=conf.wscale)
 		encoder_ax_y_attributes["batchnorm_merge"] = L.BatchNormalization(conf.encoder_ax_y_hidden_units[0])
-		encoder_ax_y = GaussianEncoder(**encoder_ax_y_attributes)
+		encoder_ax_y = SoftmaxEncoder(**encoder_ax_y_attributes)
 		encoder_ax_y.n_layers = len(encoder_ax_y_units)
 		encoder_ax_y.activation_function = conf.encoder_ax_y_activation_function
 		encoder_ax_y.apply_dropout = conf.encoder_ax_y_apply_dropout
@@ -281,7 +281,8 @@ class ADGM():
 
 	def sample_x_y(self, x, argmax=False, test=False):
 		batchsize = x.data.shape[0]
-		y_distribution = self.encoder_ax_y(x, test=test, softmax=True).data
+		a = self.encoder_x_a(x, test=test, apply_f=True)
+		y_distribution = self.encoder_ax_y(a, x, test=test, softmax=True).data
 		n_labels = y_distribution.shape[1]
 		if self.gpu:
 			y_distribution = cuda.to_cpu(y_distribution)
@@ -301,7 +302,8 @@ class ADGM():
 
 	def sample_x_label(self, x, argmax=True, test=False):
 		batchsize = x.data.shape[0]
-		y_distribution = self.encoder_ax_y(x, test=test, softmax=True).data
+		a = self.encoder_x_a(x, test=test, apply_f=True)
+		y_distribution = self.encoder_ax_y(a, x, test=test, softmax=True).data
 		n_labels = y_distribution.shape[1]
 		if self.gpu:
 			y_distribution = cuda.to_cpu(y_distribution)
@@ -369,6 +371,7 @@ class ADGM():
 
 	def train(self, labeled_x, labeled_y, label_ids, unlabeled_x, test=False):
 		loss, loss_labeled, loss_unlabeled = self.compute_lower_bound_loss(labeled_x, labeled_y, label_ids, unlabeled_x, test=test)
+
 		self.zero_grads()
 		loss.backward()
 		self.update()
@@ -394,6 +397,7 @@ class ADGM():
 
 	def train_jointly(self, labeled_x, labeled_y, label_ids, unlabeled_x, alpha=1.0, test=False):
 		loss_lower_bound, loss_lb_labled, loss_lb_unlabled = self.compute_lower_bound_loss(labeled_x, labeled_y, label_ids, unlabeled_x, test=test)
+
 		loss_classification = alpha * self.compute_classification_loss(labeled_x, label_ids, test=test)
 		loss = loss_lower_bound + loss_classification
 		self.zero_grads()
@@ -425,17 +429,22 @@ class ADGM():
 
 		### Lower bound for labeled data ###
 		a_mean_l, a_ln_var_l = self.encoder_x_a(labeled_x, test=test, apply_f=False)
-		a_l = F.gaussian(a_mean_l, a_ln_var_l)
 		z_mean_l, z_ln_var_l = self.encoder_xy_z(labeled_x, labeled_y, test=test, apply_f=False)
-		z_l = F.gaussian(z_mean_l, z_ln_var_l)
 
-		log_px_zy_l = self.log_px_yz(labeled_x, z_l, labeled_y, test=test)
-		log_py_l = self.log_py(labeled_y)
-		log_pz_l = self.log_pz(z_l)
-		log_pa_l = self.log_pa(a_l)
-		log_qz_xy_l = self.log_qz_xy(z_l, z_mean_l, z_ln_var_l)
-		log_qa_x_l = self.log_qa_x(a_l, a_mean_l, a_ln_var_l)
-		lower_bound_l = lower_bound(log_px_zy_l, log_py_l, log_pa_l, log_pz_l, log_qz_xy_l, log_qa_x_l)
+		lower_bound_l = 0
+		for n in xrange(self.conf.n_mc_samples):
+			a_l = F.gaussian(a_mean_l, a_ln_var_l)
+			z_l = F.gaussian(z_mean_l, z_ln_var_l)
+
+			log_px_zy_l = self.log_px_yz(labeled_x, z_l, labeled_y, test=test)
+			log_py_l = self.log_py(labeled_y)
+			log_pz_l = self.log_pz(z_l)
+			log_pa_l = self.log_pa(a_l)
+			log_qz_xy_l = self.log_qz_xy(z_l, z_mean_l, z_ln_var_l)
+			log_qa_x_l = self.log_qa_x(a_l, a_mean_l, a_ln_var_l)
+			lower_bound_l += lower_bound(log_px_zy_l, log_py_l, log_pa_l, log_pz_l, log_qz_xy_l, log_qa_x_l)
+		if self.conf.n_mc_samples > 1:
+			lower_bound_l /= self.conf.n_mc_samples
 
 		if batchsize_u > 0:
 			### Lower bound for unlabeled data ###
@@ -458,17 +467,22 @@ class ADGM():
 			unlabeled_x_ext = Variable(unlabeled_x_ext)
 
 			a_mean_u_ext, a_ln_var_u_ext = self.encoder_x_a(unlabeled_x_ext, test=test, apply_f=False)
-			a_u_ext = F.gaussian(a_mean_u_ext, a_ln_var_u_ext)
 			z_mean_u_ext, z_mean_ln_var_u_ext = self.encoder_xy_z(unlabeled_x_ext, y_ext, test=test, apply_f=False)
-			z_u_ext = F.gaussian(z_mean_u_ext, z_mean_ln_var_u_ext)
 
-			log_px_zy_u = self.log_px_yz(unlabeled_x_ext, z_u_ext, y_ext, test=test)
-			log_py_u = self.log_py(y_ext)
-			log_pz_u = self.log_pz(z_u_ext)
-			log_pa_u = self.log_pa(a_u_ext)
-			log_qz_xy_u = self.log_qz_xy(z_u_ext, z_mean_u_ext, z_mean_ln_var_u_ext)
-			log_qa_x_u = self.log_qa_x(a_u_ext, a_mean_u_ext, a_ln_var_u_ext)
-			lower_bound_u = lower_bound(log_px_zy_u, log_py_u, log_pa_u, log_pz_u, log_qz_xy_u, log_qa_x_u)
+			lower_bound_u = 0
+			for n in xrange(self.conf.n_mc_samples):
+				a_u_ext = F.gaussian(a_mean_u_ext, a_ln_var_u_ext)
+				z_u_ext = F.gaussian(z_mean_u_ext, z_mean_ln_var_u_ext)
+
+				log_px_zy_u = self.log_px_yz(unlabeled_x_ext, z_u_ext, y_ext, test=test)
+				log_py_u = self.log_py(y_ext)
+				log_pz_u = self.log_pz(z_u_ext)
+				log_pa_u = self.log_pa(a_u_ext)
+				log_qz_xy_u = self.log_qz_xy(z_u_ext, z_mean_u_ext, z_mean_ln_var_u_ext)
+				log_qa_x_u = self.log_qa_x(a_u_ext, a_mean_u_ext, a_ln_var_u_ext)
+				lower_bound_u += lower_bound(log_px_zy_u, log_py_u, log_pa_u, log_pz_u, log_qz_xy_u, log_qa_x_u)
+			if self.conf.n_mc_samples > 1:
+				lower_bound_u /= self.conf.n_mc_samples
 
 			# Compute sum_y{q(y|x){-L(x,y) + H(q(y|x))}}
 			# Let LB(xn, y) be the lower bound for an input image xn and a label y (y = 0, 1, ..., 9).
@@ -495,7 +509,7 @@ class ADGM():
 			lower_bound_u = F.transpose(F.reshape(lower_bound_u, (n_types_of_label, batchsize_u)))
 			
 			a_u = self.encoder_x_a(unlabeled_x, test=test, apply_f=True)
-			y_distribution = self.encoder_ax_y(unlabeled_x, a_u, test=test, softmax=True)
+			y_distribution = self.encoder_ax_y(a_u, unlabeled_x, test=test, softmax=True)
 			lower_bound_u = y_distribution * (lower_bound_u - F.log(y_distribution + 1e-6))
 
 			loss_labeled = -F.sum(lower_bound_l) / batchsize_l
@@ -509,7 +523,8 @@ class ADGM():
 		return loss, loss_labeled, loss_unlabeled
 
 	def compute_classification_loss(self, labeled_x, label_ids, test=False):
-		y_distribution = self.encoder_ax_y(labeled_x, softmax=False, test=test)
+		a = self.encoder_x_a(labeled_x, test=test, apply_f=True)
+		y_distribution = self.encoder_ax_y(a, labeled_x, softmax=False, test=test)
 		batchsize = labeled_x.data.shape[0]
 		n_types_of_label = y_distribution.data.shape[1]
 
@@ -556,18 +571,25 @@ class SoftmaxEncoder(chainer.Chain):
 	def xp(self):
 		return np if self._cpu else cuda.cupy
 
-	def forward_one_step(self, x, test):
+	def forward_one_step(self, a, x, test):
 		f = activations[self.activation_function]
-		chain = [x]
 
+		if self.apply_batchnorm_to_input:
+			if self.batchnorm_before_activation:
+				merged_input = f(self.batchnorm_merge(self.layer_merge_x(x) + self.layer_merge_a(a), test=test))
+			else:
+				merged_input = f(self.layer_merge_x(self.batchnorm_merge(x, test=test)) + self.layer_merge_a(a))
+		else:
+			merged_input = f(self.layer_merge_x(x) + self.layer_merge_a(a))
+
+		chain = [merged_input]
+
+		# Hidden
 		for i in range(self.n_layers):
 			u = chain[-1]
 			if self.batchnorm_before_activation:
 				u = getattr(self, "layer_%i" % i)(u)
-			if i == 0:
-				if self.apply_batchnorm_to_input:
-					u = getattr(self, "batchnorm_%d" % i)(u, test=test)
-			elif i == self.n_layers - 1:
+			if i == self.n_layers - 1:
 				if self.apply_batchnorm and self.batchnorm_before_activation == False:
 					u = getattr(self, "batchnorm_%d" % i)(u, test=test)
 			else:
@@ -584,9 +606,10 @@ class SoftmaxEncoder(chainer.Chain):
 			chain.append(output)
 
 		return chain[-1]
+		return chain[-1]
 
-	def __call__(self, x, test=False, softmax=True):
-		output = self.forward_one_step(x, test=test)
+	def __call__(self, a, x, test=False, softmax=True):
+		output = self.forward_one_step(a, x, test=test)
 		if softmax:
 			return F.softmax(output)
 		return output
