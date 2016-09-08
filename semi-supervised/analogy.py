@@ -13,15 +13,14 @@ try:
 except:
 	pass
 
-dataset = util.load_images(args.train_image_dir, dist=conf.distribution_x)
+dataset = util.load_images(args.test_image_dir, dist=conf.distribution_x)
 
 n_analogies = 10
 n_image_channels = 1
 image_width = 28
 image_height = 28
 x = util.sample_x_variable(10, conf.ndim_x, dataset, gpu_enabled=conf.gpu_enabled)
-y = vae.sample_x_y(x, test=True)
-z = vae.encode_xy_z(x, y, test=True)
+z = adgm.encode_x_z(x, argmax=True, test=True)
 
 fig = pylab.gcf()
 fig.set_size_inches(16.0, 16.0)
@@ -46,7 +45,7 @@ for m in xrange(n_analogies):
 	for n in xrange(conf.ndim_y):
 		base_z[n] = z.data[m]
 	base_z = Variable(base_z)
-	_x = vae.decode_zy_x(base_z, all_y, test=True, apply_f=True)
+	_x = adgm.decode_zy_x(base_z, all_y, test=True, apply_f=True)
 	if conf.gpu_enabled:
 		_x.to_cpu()
 	for n in xrange(conf.ndim_y):
