@@ -6,18 +6,14 @@ import matplotlib.patches as mpatches
 sys.path.append(os.path.split(os.getcwd())[0])
 import util
 from args import args
-from model import conf, vae
-from vae_m2 import GaussianM2VAE
+from model import conf, adgm
 
 try:
 	os.mkdir(args.vis_dir)
 except:
 	pass
 
-dist = "bernoulli"
-if isinstance(vae, GaussianM2VAE):
-	dist = "gaussian"
-dataset = util.load_images(args.test_image_dir, dist=dist)
+dataset = util.load_images(args.train_image_dir, dist=conf.distribution_x)
 
 n_analogies = 10
 n_image_channels = 1
