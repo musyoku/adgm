@@ -273,9 +273,9 @@ class ADGM():
 			attributes["batchnorm_merge_x"] = L.BatchNormalization(conf.ndim_x)
 			attributes["batchnorm_merge_z"] = L.BatchNormalization(conf.ndim_z)
 
-		attributes["layer_output_mean"] = L.Linear(conf.encoder_xy_z_hidden_units[-1], conf.ndim_z, initialW=np.random.normal(scale=conf.wscale, size=(conf.ndim_z, conf.encoder_xy_z_hidden_units[-1])))
-		attributes["layer_output_var"] = L.Linear(conf.encoder_xy_z_hidden_units[-1], conf.ndim_z, initialW=np.random.normal(scale=conf.wscale, size=(conf.ndim_z, conf.encoder_xy_z_hidden_units[-1])))
-		encoder_axy_z = GaussianEncoder_AXY_Z(**attributes)
+		attributes["layer_output_mean"] = L.Linear(conf.encoder_xy_z_hidden_units[-1], conf.ndim_a, initialW=np.random.normal(scale=conf.wscale, size=(conf.ndim_a, conf.encoder_xy_z_hidden_units[-1])))
+		attributes["layer_output_var"] = L.Linear(conf.encoder_xy_z_hidden_units[-1], conf.ndim_a, initialW=np.random.normal(scale=conf.wscale, size=(conf.ndim_a, conf.encoder_xy_z_hidden_units[-1])))
+		encoder_axy_z = GaussianDecoder_XYZ_A(**attributes)
 		encoder_axy_z.n_layers = len(units)
 		encoder_axy_z.activation_function = conf.encoder_xy_z_activation_function
 		encoder_axy_z.apply_dropout = conf.encoder_xy_z_apply_dropout
@@ -532,8 +532,8 @@ class ADGM():
 				log_py_u = self.log_py(y_ext)
 				log_pa_xyz_u = self.log_pa_xyz(a_u_ext, unlabeled_x_ext, y_ext, z_u_ext)
 				log_pz_u = self.log_pz(z_u_ext)
-				log_qz_axy_u = self.gaussian_nll_keepbatch(z_u_ext, z_mean_u, z_un_var_u)
-				log_qa_x_u = self.gaussian_nll_keepbatch(a_u_ext, a_mean_u, a_un_var_u)
+				log_qz_axy_u = self.gaussian_nll_keepbatch(z_u_ext, z_mean_u_ext, z_mean_ln_var_u_ext)
+				log_qa_x_u = self.gaussian_nll_keepbatch(a_u_ext, a_mean_u_ext, a_ln_var_u_ext)
 				lower_bound_u += lower_bound(log_px_zy_u, log_py_u, log_pa_xyz_u, log_pz_u, log_qz_axy_u, log_qa_x_u)
 			if self.conf.n_mc_samples > 1:
 				lower_bound_u /= self.conf.n_mc_samples
@@ -620,12 +620,13 @@ class MultiLayerPerceptron(chainer.Chain):
 		self.apply_batchnorm = True
 		self.apply_dropout = False
 		self.batchnorm_before_activation = True
+		self.test = False
 
 	@property
 	def xp(self):
 		return np if self._cpu else cuda.cupy
 
-	def compute_output(self, x, test):
+	def compute_output(self, x):
 		f = activations[self.activation_function]
 		chain = [x]
 
@@ -636,10 +637,10 @@ class MultiLayerPerceptron(chainer.Chain):
 				u = getattr(self, "layer_%i" % i)(u)
 			if i == self.n_layers - 1:
 				if self.apply_batchnorm and self.batchnorm_before_activation == False:
-					u = getattr(self, "batchnorm_%d" % i)(u, test=test)
+					u = getattr(self, "batchnorm_%d" % i)(u, test=self.test)
 			else:
 				if self.apply_batchnorm:
-					u = getattr(self, "batchnorm_%d" % i)(u, test=test)
+					u = getattr(self, "batchnorm_%d" % i)(u, test=self.test)
 			if self.batchnorm_before_activation == False:
 				u = getattr(self, "layer_%i" % i)(u)
 			if i == self.n_layers - 1:
@@ -647,33 +648,35 @@ class MultiLayerPerceptron(chainer.Chain):
 			else:
 				output = f(u)
 				if self.apply_dropout:
-					output = F.dropout(output, train=not test)
+					output = F.dropout(output, train=not self.test)
 			chain.append(output)
 
 		return chain[-1]
 
 	def __call__(self, x, test=False, apply_f=True):
-		output = self.compute_output(x, test=test)
+		self.test = test
+		output = self.compute_output(x)
 		if apply_f:
 			f = activations[self.activation_function]
 			return f(output)
 		return output
 
-class SoftmaxEncoder_AX_Y(SoftmaxEncoder):
+class SoftmaxEncoder_AX_Y(MultiLayerPerceptron):
 
-	def forward_one_step(self, a, x, test):
+	def forward_one_step(self, a, x):
 		f = activations[self.activation_function]
 		if self.apply_batchnorm_to_input:
 			if self.batchnorm_before_activation:
-				merged_input = f(self.batchnorm_merge(self.layer_merge_a(a) + self.layer_merge_x(x), test=test))
+				merged_input = f(self.batchnorm_merge(self.layer_merge_a(a) + self.layer_merge_x(x), test=self.test))
 			else:
-				merged_input = f(self.layer_merge_a(self.batchnorm_merge(a, test=test)) + self.layer_merge_x(x))
+				merged_input = f(self.layer_merge_a(self.batchnorm_merge(a, test=self.test)) + self.layer_merge_x(x))
 		else:
 			merged_input = f(self.layer_merge_a(a) + self.layer_merge_x(x))
 		return self.compute_output(merged_input)
 
 	def __call__(self, a, x, test=False, softmax=False):
-		output = self.forward_one_step(a, x, test=test)
+		self.test = test
+		output = self.forward_one_step(a, x)
 		if softmax:
 			return F.softmax(output)
 		return output
@@ -691,10 +694,10 @@ class GaussianEncoder_X_A(chainer.Chain):
 	def xp(self):
 		return np if self._cpu else cuda.cupy
 
-	def forward_one_step(self, x, test=False, apply_f=True):
-		return self.compute_output(x, test, apply_f)
+	def forward_one_step(self, x):
+		return self.compute_output(x)
 
-	def compute_output(self, x, test=False, apply_f=True):
+	def compute_output(self, x):
 		f = activations[self.activation_function]
 		chain = [x]
 		# Hidden
@@ -703,12 +706,12 @@ class GaussianEncoder_X_A(chainer.Chain):
 			if self.batchnorm_before_activation:
 				u = getattr(self, "layer_%i" % i)(u)
 			if self.apply_batchnorm:
-				u = getattr(self, "batchnorm_%d" % i)(u, test=test)
+				u = getattr(self, "batchnorm_%d" % i)(u, test=self.test)
 			if self.batchnorm_before_activation == False:
 				u = getattr(self, "layer_%i" % i)(u)
 			output = f(u)
 			if self.apply_dropout:
-				output = F.dropout(output, train=not test)
+				output = F.dropout(output, train=not self.test)
 			chain.append(output)
 
 		u = chain[-1]
@@ -721,94 +724,99 @@ class GaussianEncoder_X_A(chainer.Chain):
 		return mean, ln_var
 
 	def __call__(self, x, test=False, apply_f=True):
-		mean, ln_var = self.forward_one_step(x, test=test, apply_f=apply_f)
+		self.test = test
+		mean, ln_var = self.forward_one_step(x)
 		if apply_f:
 			return F.gaussian(mean, ln_var)
 		return mean, ln_var
 
 class GaussianEncoder_AXY_Z(GaussianEncoder_X_A):
 
-	def merge_input(self, a, x, y, test=False):
+	def merge_input(self, a, x, y):
 		f = activations[self.activation_function]
 		if self.apply_batchnorm_to_input:
 			if self.batchnorm_before_activation:
-				merged_input = f(self.batchnorm_merge(self.layer_merge_a(a) + self.layer_merge_y(y) + self.layer_merge_x(x), test=test))
+				merged_input = f(self.batchnorm_merge(self.layer_merge_a(a) + self.layer_merge_y(y) + self.layer_merge_x(x), test=self.test))
 			else:
-				merged_input = f(self.layer_merge_a(self.batchnorm_merge_z(a, test=test)) + self.layer_merge_y(y) + self.layer_merge_x(self.batchnorm_merge_x(x, test=test)))
+				merged_input = f(self.layer_merge_a(self.batchnorm_merge_z(a, test=self.test)) + self.layer_merge_y(y) + self.layer_merge_x(self.batchnorm_merge_x(x, test=self.test)))
 		else:
 			merged_input = f(self.layer_merge_a(a) + self.layer_merge_y(y) + self.layer_merge_x(x))
 
 		return merged_input
 
-	def forward_one_step(self, a, x, y, test=False, apply_f=True):
-		merged_input = self.merge_input(a, x, y, test=test)
-		return self.compute_output(merged_input, test, apply_f)
+	def forward_one_step(self, a, x, y):
+		merged_input = self.merge_input(a, x, y)
+		return self.compute_output(merged_input)
 
 	def __call__(self, a, x, y, test=False, apply_f=False):
-		mean, ln_var = self.forward_one_step(a, x, y, test=test, apply_f=False)
+		self.test = test
+		mean, ln_var = self.forward_one_step(a, x, y)
 		if apply_f:
 			return F.gaussian(mean, ln_var)
 		return mean, ln_var
 
 class GaussianDecoder_XYZ_A(GaussianEncoder_X_A):
 
-	def merge_input(self, x, y, z, test=False):
+	def merge_input(self, x, y, z):
 		f = activations[self.activation_function]
 		if self.apply_batchnorm_to_input:
 			if self.batchnorm_before_activation:
-				merged_input = f(self.batchnorm_merge(self.layer_merge_z(z) + self.layer_merge_y(y) + self.layer_merge_x(x), test=test))
+				merged_input = f(self.batchnorm_merge(self.layer_merge_z(z) + self.layer_merge_y(y) + self.layer_merge_x(x), test=self.test))
 			else:
-				merged_input = f(self.layer_merge_z(self.batchnorm_merge_z(z, test=test)) + self.layer_merge_y(y) + self.layer_merge_x(self.batchnorm_merge_x(x, test=test)))
+				merged_input = f(self.layer_merge_z(self.batchnorm_merge_z(z, test=self.test)) + self.layer_merge_y(y) + self.layer_merge_x(self.batchnorm_merge_x(x, test=self.test)))
 		else:
 			merged_input = f(self.layer_merge_z(z) + self.layer_merge_y(y) + self.layer_merge_x(x))
 
 		return merged_input
 
-	def forward_one_step(self, x, y, z, test=False, apply_f=True):
-		merged_input = self.merge_input(x, y, z, test=test)
-		return self.compute_output(merged_input, test, apply_f)
+	def forward_one_step(self, x, y, z):
+		merged_input = self.merge_input(x, y, z)
+		return self.compute_output(merged_input)
 
 	def __call__(self, x, y, z, test=False, apply_f=False):
-		mean, ln_var = self.forward_one_step(x, y, z, test=test, apply_f=False)
+		self.test = test
+		mean, ln_var = self.forward_one_step(x, y, z)
 		if apply_f:
 			return F.gaussian(mean, ln_var)
 		return mean, ln_var
 
 class GaussianDecoder_YZ_X(GaussianEncoder_X_A):
 
-	def merge_input(self, y, z, test=False):
+	def merge_input(self, y, z):
 		f = activations[self.activation_function]
 		if self.apply_batchnorm_to_input:
 			if self.batchnorm_before_activation:
-				merged_input = f(self.batchnorm_merge(self.layer_merge_z(z) + self.layer_merge_y(y), test=test))
+				merged_input = f(self.batchnorm_merge(self.layer_merge_z(z) + self.layer_merge_y(y), test=self.test))
 			else:
-				merged_input = f(self.layer_merge_z(self.batchnorm_merge(z, test=test)) + self.layer_merge_y(y))
+				merged_input = f(self.layer_merge_z(self.batchnorm_merge(z, test=self.test)) + self.layer_merge_y(y))
 		else:
 			merged_input = f(self.layer_merge_z(z) + self.layer_merge_y(y))
 
 		return merged_input
 
 	def __call__(self, y, z, test=False, apply_f=False):
-		mean, ln_var = self.forward_one_step(y, z, test=test, apply_f=False)
+		self.test = test
+		mean, ln_var = self.forward_one_step(y, z)
 		if apply_f:
 			return F.gaussian(mean, ln_var)
 		return mean, ln_var
 
-class BernoulliDecoder_YZ_X(SoftmaxEncoder):
+class BernoulliDecoder_YZ_X(MultiLayerPerceptron):
 
-	def forward_one_step(self, y, z, test):
+	def forward_one_step(self, y, z):
 		f = activations[self.activation_function]
 		if self.apply_batchnorm_to_input:
 			if self.batchnorm_before_activation:
-				merged_input = f(self.batchnorm_merge(self.layer_merge_z(z) + self.layer_merge_y(y), test=test))
+				merged_input = f(self.batchnorm_merge(self.layer_merge_z(z) + self.layer_merge_y(y), test=self.test))
 			else:
-				merged_input = f(self.layer_merge_z(self.batchnorm_merge(z, test=test)) + self.layer_merge_y(y))
+				merged_input = f(self.layer_merge_z(self.batchnorm_merge(z, test=self.test)) + self.layer_merge_y(y))
 		else:
 			merged_input = f(self.layer_merge_z(z) + self.layer_merge_y(y))
 		return self.compute_output(merged_input)
 
 	def __call__(self, y, z, test=False, apply_f=False):
-		output = self.forward_one_step(y, z, test=test)
+		self.test = test
+		output = self.forward_one_step(y, z)
 		if apply_f:
 			return F.sigmoid(output)
 		return output

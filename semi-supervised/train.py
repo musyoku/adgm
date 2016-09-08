@@ -18,7 +18,7 @@ batchsize_u = 200
 # Create labeled/unlabeled split in training set
 n_types_of_label = 10
 n_labeled_data = args.n_labeled_data
-n_validation_data = 10000
+n_validation_data = args.n_validation_data
 labeled_dataset, labels, unlabeled_dataset, validation_dataset, validation_labels = util.create_semisupervised(dataset, labels, n_validation_data, n_labeled_data, n_types_of_label)
 print "labels:", labels
 alpha = 0.1 * len(dataset) / len(labeled_dataset)
