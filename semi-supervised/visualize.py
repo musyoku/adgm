@@ -19,18 +19,21 @@ dataset, labels = util.load_labeled_images(args.test_image_dir, dist=conf.distri
 def forward_one_step(num_images):
 	x, y_labeled, label_ids = util.sample_x_and_label_variables(num_images, conf.ndim_x, conf.ndim_y, dataset, labels, gpu_enabled=False)
 	x.to_gpu()
-	y = adgm.sample_x_y(x, argmax=True, test=True)
-	z = adgm.encoder_xy_z(x, y, test=True)
-	_x = adgm.decode_zy_x(z, y, test=True)
+	a = adgm.encode_x_a(x, test=True)
+	y = adgm.sample_ax_y(a, x, argmax=True, test=True)
+	z = adgm.encode_axy_z(a, x, y, test=True)
+	_x = adgm.decode_yz_x(y, z, test=True)
 	if conf.gpu_enabled:
 		z.to_cpu()
+		a.to_cpu()
 		_x.to_cpu()
 	_x = _x.data
-	return z, _x, label_ids
+	return a, z, _x, label_ids
 
-z, _x, _ = forward_one_step(100)
+a, z, _x, _ = forward_one_step(100)
 visualizer.tile_x(_x, dir=args.vis_dir)
 
-z, _x, label_ids = forward_one_step(5000)
+a, z, _x, label_ids = forward_one_step(5000)
 visualizer.plot_z(z.data, dir=args.vis_dir)
+visualizer.plot_z(a.data, dir=args.vis_dir, filename="a")
 visualizer.plot_labeled_z(z.data, label_ids.data, dir=args.vis_dir)

@@ -318,14 +318,11 @@ class ADGM():
 	def update_classifier(self):
 		self.optimizer_encoder_ax_y.update()
 
-	def encode_x_z(self, x, argmax=False, test=False):
-		y = self.sample_x_y(x, argmax=argmax, test=test)
-		z = self.encoder_axy_z(x, y, test=test)
-		return z
+	def encode_x_a(self, x, test=False, apply_f=True):
+		return self.encoder_x_a(x, test=test, apply_f=apply_f)
 
-	def encode_xy_z(self, x, y, test=False):
-		z = self.encoder_axy_z(x, y, test=test)
-		return z
+	def encode_axy_z(self, a, x, y, test=False, apply_f=True):
+		return self.encoder_axy_z(a, x, y, test=test, apply_f=apply_f)
 
 	def decode_yz_x(self, y, z, test=False, apply_f=True):
 		return self.decoder_yz_x(y, z, test=test, apply_f=apply_f)
@@ -334,8 +331,11 @@ class ADGM():
 		return self.decoder_xyz_a(x, y, z, test=test, apply_f=apply_f)
 
 	def sample_x_y(self, x, argmax=False, test=False):
-		batchsize = x.data.shape[0]
 		a = self.encoder_x_a(x, test=test, apply_f=True)
+		return self.sample_ax_y(a, x, argmax=argmax, test=test)
+
+	def sample_ax_y(self, a, x, argmax=False, test=False):
+		batchsize = x.data.shape[0]
 		y_distribution = self.encoder_ax_y(a, x, test=test, softmax=True).data
 		n_labels = y_distribution.shape[1]
 		if self.gpu:
@@ -355,6 +355,10 @@ class ADGM():
 		return sampled_y
 
 	def sample_x_label(self, x, argmax=True, test=False):
+		a = self.encoder_x_a(x, test=test, apply_f=True)
+		return self.sample_ax_label(a, x, argmax=argmax, test=test)
+
+	def sample_ax_label(self, a, x, argmax=True, test=False):
 		batchsize = x.data.shape[0]
 		a = self.encoder_x_a(x, test=test, apply_f=True)
 		y_distribution = self.encoder_ax_y(a, x, test=test, softmax=True).data
@@ -377,7 +381,7 @@ class ADGM():
 
 	def gaussian_nll_keepbatch(self, x, mean, ln_var, clip=True):
 		if clip:
-			clip_min = math.log(0.001)
+			clip_min = math.log(0.01)
 			clip_max = math.log(10)
 			ln_var = F.clip(ln_var, clip_min, clip_max)
 		x_prec = F.exp(-ln_var)
@@ -471,8 +475,7 @@ class ADGM():
 	def compute_lower_bound_loss(self, labeled_x, labeled_y, label_ids, unlabeled_x, test=False):
 
 		def lower_bound(log_px_yz, log_py, log_pa_xyz, log_pz, log_qz_axy, log_qa_x):
-			lb = log_px_yz + log_py + log_pa_xyz + log_pz - log_qz_axy - log_qa_x
-			return lb
+			return log_px_yz + log_py + log_pa_xyz + log_pz - log_qz_axy - log_qa_x
 
 		# _l: labeled
 		# _u: unlabeled
