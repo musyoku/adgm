@@ -502,6 +502,7 @@ class ADGM():
 			z_mean_l, z_ln_var_l = self.encoder_axy_z(a_l, labeled_x, labeled_y, test=test, apply_f=False)
 			z_l = F.gaussian(z_mean_l, z_ln_var_l)
 
+			# compute lower bound
 			log_px_zy_l = self.log_px_yz(labeled_x, labeled_y, z_l, test=test)
 			log_py_l = self.log_py(labeled_y)
 			log_pa_xyz_l = self.log_pa_xyz(a_l, labeled_x, labeled_y, z_l)
@@ -509,11 +510,13 @@ class ADGM():
 			log_qz_axy_l = -self.gaussian_nll_keepbatch(z_l, z_mean_l, z_ln_var_l)	# 'gaussian_nll_keepbatch' returns the negative log-likelihood
 			log_qa_x_l = -self.gaussian_nll_keepbatch(a_l, a_mean_l, a_ln_var_l)
 			lower_bound_l += lower_bound(log_px_zy_l, log_py_l, log_pa_xyz_l, log_pz_l, log_qz_axy_l, log_qa_x_l)
+
+		# take the average
 		if self.conf.n_mc_samples > 1:
 			lower_bound_l /= self.conf.n_mc_samples
 
+		### Lower bound for unlabeled data ###
 		if batchsize_u > 0:
-			### Lower bound for unlabeled data ###
 			# To marginalize y, we repeat unlabeled x, and construct a target (batchsize_u * n_types_of_label) x n_types_of_label
 			# Example of n-dimensional x and target matrix for a 3 class problem and batch_size=2.
 			#         unlabeled_x_ext                 y_ext
@@ -524,6 +527,7 @@ class ADGM():
 			#   [x0[0], x0[1], ..., x0[n]]          [0, 0, 1]
 			#   [x1[0], x1[1], ..., x1[n]]]         [0, 0, 1]]
 
+			# create data
 			unlabeled_x_ext = xp.zeros((batchsize_u * n_types_of_label, unlabeled_x.data.shape[1]), dtype=xp.float32)
 			y_ext = xp.zeros((batchsize_u * n_types_of_label, n_types_of_label), dtype=xp.float32)
 			for n in xrange(n_types_of_label):
@@ -540,6 +544,7 @@ class ADGM():
 				z_mean_u_ext, z_mean_ln_var_u_ext = self.encoder_axy_z(a_u_ext, unlabeled_x_ext, y_ext, test=test, apply_f=False)
 				z_u_ext = F.gaussian(z_mean_u_ext, z_mean_ln_var_u_ext)
 
+				# compute lower bound
 				log_px_zy_u = self.log_px_yz(unlabeled_x_ext, y_ext, z_u_ext, test=test)
 				log_py_u = self.log_py(y_ext)
 				log_pa_xyz_u = self.log_pa_xyz(a_u_ext, unlabeled_x_ext, y_ext, z_u_ext)
@@ -547,6 +552,8 @@ class ADGM():
 				log_qz_axy_u = -self.gaussian_nll_keepbatch(z_u_ext, z_mean_u_ext, z_mean_ln_var_u_ext)		# 'gaussian_nll_keepbatch' returns the negative log-likelihood
 				log_qa_x_u = -self.gaussian_nll_keepbatch(a_u_ext, a_mean_u_ext, a_ln_var_u_ext)
 				lower_bound_u += lower_bound(log_px_zy_u, log_py_u, log_pa_xyz_u, log_pz_u, log_qz_axy_u, log_qa_x_u)
+
+			# take the average
 			if self.conf.n_mc_samples > 1:
 				lower_bound_u /= self.conf.n_mc_samples
 
@@ -574,10 +581,12 @@ class ADGM():
 			#  [LB(x_bs,0), LB(x_bs,1), ..., LB(x_bs,9)]]
 			lower_bound_u = F.transpose(F.reshape(lower_bound_u, (n_types_of_label, batchsize_u)))
 			
+			# take expectations w.r.t 'y'
 			a_u = self.encoder_x_a(unlabeled_x, test=test, apply_f=True)
 			y_distribution = self.encoder_ax_y(a_u, unlabeled_x, test=test, softmax=True)
 			lower_bound_u = y_distribution * (lower_bound_u - F.log(y_distribution + 1e-6))
 
+			# loss = -1 * lower bound
 			loss_labeled = -F.sum(lower_bound_l) / batchsize_l
 			loss_unlabeled = -F.sum(lower_bound_u) / batchsize_u
 			loss = loss_labeled + loss_unlabeled
