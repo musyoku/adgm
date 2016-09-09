@@ -8,7 +8,7 @@ conf.gpu_enabled = True if args.gpu_enabled == 1 else False
 conf.learning_rate = 0.0003
 conf.gradient_momentum = 0.9
 conf.gradient_clipping = 10.0
-conf.wscale = 0.01
+conf.wscale = 0.001
 
 conf.ndim_z = 100
 conf.ndim_a = 100

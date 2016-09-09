@@ -99,47 +99,7 @@ class GradientClipping(object):
 				with cuda.get_device(grad):
 					grad *= rate
 
-class ADGM():
-	# name is used for the filename when you save the model
-	def __init__(self, conf, name="adgm"):
-		conf.check()
-		self.conf = conf
-		self.name = name
-
-		# q(z|a, x, y)
-		self.encoder_axy_z = self.build_encoder_axy_z()
-		self.optimizer_encoder_axy_z = optimizers.Adam(alpha=conf.learning_rate, beta1=conf.gradient_momentum)
-		self.optimizer_encoder_axy_z.setup(self.encoder_axy_z)
-		# self.optimizer_encoder_axy_z.add_hook(optimizer.WeightDecay(0.00001))
-		self.optimizer_encoder_axy_z.add_hook(GradientClipping(conf.gradient_clipping))
-
-		# q(y|a, x)
-		self.encoder_ax_y = self.build_encoder_ax_y()
-		self.optimizer_encoder_ax_y = optimizers.Adam(alpha=conf.learning_rate, beta1=conf.gradient_momentum)
-		self.optimizer_encoder_ax_y.setup(self.encoder_ax_y)
-		# self.optimizer_encoder_ax_y.add_hook(optimizer.WeightDecay(0.00001))
-		self.optimizer_encoder_ax_y.add_hook(GradientClipping(conf.gradient_clipping))
-
-		# q(a|x)
-		self.encoder_x_a = self.build_encoder_x_a()
-		self.optimizer_encoder_x_a = optimizers.Adam(alpha=conf.learning_rate, beta1=conf.gradient_momentum)
-		self.optimizer_encoder_x_a.setup(self.encoder_x_a)
-		# self.optimizer_encoder_x_a.add_hook(optimizer.WeightDecay(0.00001))
-		self.optimizer_encoder_x_a.add_hook(GradientClipping(conf.gradient_clipping))
-
-		# p(x|y, z)
-		self.decoder_yz_x = self.build_decoder_yz_x()
-		self.optimizer_decoder_yz_x = optimizers.Adam(alpha=conf.learning_rate, beta1=conf.gradient_momentum)
-		self.optimizer_decoder_yz_x.setup(self.decoder_yz_x)
-		# self.optimizer_decoder_yz_x.add_hook(optimizer.WeightDecay(0.00001))
-		self.optimizer_decoder_yz_x.add_hook(GradientClipping(conf.gradient_clipping))
-
-		# p(a|x, y, z)
-		self.decoder_xyz_a = self.build_decoder_xyz_a()
-		self.optimizer_decoder_xyz_a = optimizers.Adam(alpha=conf.learning_rate, beta1=conf.gradient_momentum)
-		self.optimizer_decoder_xyz_a.setup(self.decoder_xyz_a)
-		# self.optimizer_decoder_xyz_a.add_hook(optimizer.WeightDecay(0.00001))
-		self.optimizer_decoder_xyz_a.add_hook(GradientClipping(conf.gradient_clipping))
+class DGM():
 
 	def build_encoder_axy_z(self):
 		conf = self.conf
@@ -230,37 +190,6 @@ class ADGM():
 
 		return encoder_x_a
 
-	def build_decoder_yz_x(self):
-		conf = self.conf
-		attributes = {}
-		units = zip(conf.decoder_yz_x_hidden_units[:-1], conf.decoder_yz_x_hidden_units[1:])
-		units += [(conf.decoder_yz_x_hidden_units[-1], conf.ndim_x)]
-		for i, (n_in, n_out) in enumerate(units):
-			attributes["layer_%i" % i] = L.Linear(n_in, n_out, initialW=np.random.normal(scale=conf.wscale, size=(n_out, n_in)))
-			if conf.batchnorm_before_activation:
-				attributes["batchnorm_%i" % i] = L.BatchNormalization(n_out)
-			else:
-				attributes["batchnorm_%i" % i] = L.BatchNormalization(n_in)
-		attributes["layer_merge_z"] = L.Linear(conf.ndim_z, conf.decoder_yz_x_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.decoder_yz_x_hidden_units[0], conf.ndim_z)))
-		attributes["layer_merge_y"] = L.Linear(conf.ndim_y, conf.decoder_yz_x_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.decoder_yz_x_hidden_units[0], conf.ndim_y)))
-		attributes["batchnorm_merge"] = L.BatchNormalization(conf.decoder_yz_x_hidden_units[0])
-
-		if conf.distribution_x == "bernoulli":
-			decoder_yz_x = BernoulliDecoder_YZ_X(**attributes)
-		else:
-			decoder_yz_x = GaussianDecoder_YZ_X(**attributes)
-		decoder_yz_x.n_layers = len(units)
-		decoder_yz_x.activation_function = conf.decoder_yz_x_activation_function
-		decoder_yz_x.apply_dropout = conf.decoder_yz_x_apply_dropout
-		decoder_yz_x.apply_batchnorm = conf.decoder_yz_x_apply_batchnorm
-		decoder_yz_x.apply_batchnorm_to_input = conf.decoder_yz_x_apply_batchnorm_to_input
-		decoder_yz_x.batchnorm_before_activation = conf.batchnorm_before_activation
-
-		if conf.gpu_enabled:
-			decoder_yz_x.to_gpu()
-
-		return decoder_yz_x
-
 	def build_decoder_xyz_a(self):
 		conf = self.conf
 		attributes = {}
@@ -297,9 +226,6 @@ class ADGM():
 
 		return decoder_xyz_a
 
-	def train(self, x, L=1, test=False):
-		raise Exception()
-
 	@property
 	def xp(self):
 		return self.encoder_axy_z.xp
@@ -310,20 +236,6 @@ class ADGM():
 			return False
 		return True if self.xp is cuda.cupy else False
 
-	def zero_grads(self):
-		self.optimizer_encoder_axy_z.zero_grads()
-		self.optimizer_encoder_ax_y.zero_grads()
-		self.optimizer_encoder_x_a.zero_grads()
-		self.optimizer_decoder_yz_x.zero_grads()
-		self.optimizer_decoder_xyz_a.zero_grads()
-
-	def update(self):
-		self.optimizer_encoder_axy_z.update()
-		self.optimizer_encoder_ax_y.update()
-		self.optimizer_encoder_x_a.update()
-		self.optimizer_decoder_yz_x.update()
-		self.optimizer_decoder_xyz_a.update()
-
 	def update_classifier(self):
 		self.optimizer_encoder_ax_y.update()
 
@@ -332,9 +244,6 @@ class ADGM():
 
 	def encode_axy_z(self, a, x, y, test=False, apply_f=True):
 		return self.encoder_axy_z(a, x, y, test=test, apply_f=apply_f)
-
-	def decode_yz_x(self, y, z, test=False, apply_f=True):
-		return self.decoder_yz_x(y, z, test=test, apply_f=apply_f)
 
 	def decode_xyz_a(self, x, y, z, test=False, apply_f=True):
 		return self.decoder_xyz_a(x, y, z, test=test, apply_f=apply_f)
@@ -403,19 +312,7 @@ class ADGM():
 		kld = F.sum(mean * mean + var - ln_var - 1, axis=1) * 0.5
 		return kld
 
-	def log_px_yz(self, x, y, z, test=False):
-		if isinstance(self.decoder_yz_x, BernoulliDecoder_YZ_X):
-			# do not apply F.sigmoid to the output of the decoder
-			raw_output = self.decoder_yz_x(y, z, test=test, apply_f=False)
-			negative_log_likelihood = self.bernoulli_nll_keepbatch(x, raw_output)
-			log_px_yz = -negative_log_likelihood
-		else:
-			x_mean, x_ln_var = self.decoder_yz_x(y, z, test=test, apply_f=False)
-			negative_log_likelihood = self.gaussian_nll_keepbatch(x, x_mean, x_ln_var)
-			log_px_yz = -negative_log_likelihood
-		return log_px_yz
-
-	def log_pa_xyz(self, a, x, y, z, test=False):
+	def log_pa(self, a, x, y, z, test=False):
 		a_mean, a_ln_var = self.decoder_xyz_a(x, y, z, test=test, apply_f=False)
 		negative_log_likelihood = self.gaussian_nll_keepbatch(a, a_mean, a_ln_var)
 		log_px_yz = -negative_log_likelihood
@@ -432,9 +329,6 @@ class ADGM():
 	def log_pz(self, z):
 		log_pz = -0.5 * math.log(2.0 * math.pi) - 0.5 * z ** 2
 		return F.sum(log_pz, axis=1)
-
-	def log_pa(self, a):
-		return self.log_pz(a)
 
 	def train(self, labeled_x, labeled_y, label_ids, unlabeled_x):
 		loss, loss_labeled, loss_unlabeled = self.compute_lower_bound_loss(labeled_x, labeled_y, label_ids, unlabeled_x, test=False)
@@ -481,10 +375,47 @@ class ADGM():
 
 		return loss_lb_labled.data, loss_lb_unlabled.data, loss_classification.data
 
+	def compute_classification_loss(self, labeled_x, label_ids, test=False):
+		a = self.encoder_x_a(labeled_x, test=test, apply_f=True)
+		y_distribution = self.encoder_ax_y(a, labeled_x, softmax=False, test=test)
+		batchsize = labeled_x.data.shape[0]
+		n_types_of_label = y_distribution.data.shape[1]
+
+		loss = F.softmax_cross_entropy(y_distribution, label_ids)
+		return loss
+
+	def load(self, dir=None):
+		if dir is None:
+			raise Exception()
+		for attr in vars(self):
+			prop = getattr(self, attr)
+			if isinstance(prop, chainer.Chain) or isinstance(prop, chainer.optimizer.GradientMethod):
+				filename = dir + "/%s_%s.hdf5" % (self.name, attr)
+				if os.path.isfile(filename):
+					print "loading",  filename
+					serializers.load_hdf5(filename, prop)
+				else:
+					print filename, "missing."
+		print "model loaded."
+
+	def save(self, dir=None):
+		if dir is None:
+			raise Exception()
+		try:
+			os.mkdir(dir)
+		except:
+			pass
+		for attr in vars(self):
+			prop = getattr(self, attr)
+			if isinstance(prop, chainer.Chain) or isinstance(prop, chainer.optimizer.GradientMethod):
+				serializers.save_hdf5(dir + "/%s_%s.hdf5" % (self.name, attr), prop)
+		print "model saved."
+
+
 	def compute_lower_bound_loss(self, labeled_x, labeled_y, label_ids, unlabeled_x, test=False):
 
-		def lower_bound(log_px_yz, log_py, log_pa_xyz, log_pz, log_qz_axy, log_qa_x):
-			return log_px_yz + log_py + log_pa_xyz + log_pz - log_qz_axy - log_qa_x
+		def lower_bound(log_px, log_py, log_pa, log_pz, log_qz, log_qa):
+			return log_px + log_py + log_pa + log_pz - log_qz - log_qa
 
 		# _l: labeled
 		# _u: unlabeled
@@ -503,13 +434,13 @@ class ADGM():
 			z_l = F.gaussian(z_mean_l, z_ln_var_l)
 
 			# compute lower bound
-			log_px_zy_l = self.log_px_yz(labeled_x, labeled_y, z_l, test=test)
+			log_pa_l = self.log_pa(a_l, labeled_x, labeled_y, z_l)
+			log_px_l = self.log_px(a_l, labeled_x, labeled_y, z_l, test=test)
 			log_py_l = self.log_py(labeled_y)
-			log_pa_xyz_l = self.log_pa_xyz(a_l, labeled_x, labeled_y, z_l)
 			log_pz_l = self.log_pz(z_l)
-			log_qz_axy_l = -self.gaussian_nll_keepbatch(z_l, z_mean_l, z_ln_var_l)	# 'gaussian_nll_keepbatch' returns the negative log-likelihood
-			log_qa_x_l = -self.gaussian_nll_keepbatch(a_l, a_mean_l, a_ln_var_l)
-			lower_bound_l += lower_bound(log_px_zy_l, log_py_l, log_pa_xyz_l, log_pz_l, log_qz_axy_l, log_qa_x_l)
+			log_qa_l = -self.gaussian_nll_keepbatch(a_l, a_mean_l, a_ln_var_l)	# 'gaussian_nll_keepbatch' returns the negative log-likelihood
+			log_qz_l = -self.gaussian_nll_keepbatch(z_l, z_mean_l, z_ln_var_l)
+			lower_bound_l += lower_bound(log_px_l, log_py_l, log_pa_l, log_pz_l, log_qz_l, log_qa_l)
 
 		# take the average
 		if self.conf.n_mc_samples > 1:
@@ -545,13 +476,13 @@ class ADGM():
 				z_u_ext = F.gaussian(z_mean_u_ext, z_mean_ln_var_u_ext)
 
 				# compute lower bound
-				log_px_zy_u = self.log_px_yz(unlabeled_x_ext, y_ext, z_u_ext, test=test)
+				log_pa_u = self.log_pa(a_u_ext, unlabeled_x_ext, y_ext, z_u_ext)
+				log_px_u = self.log_px(a_u_ext, unlabeled_x_ext, y_ext, z_u_ext, test=test)
 				log_py_u = self.log_py(y_ext)
-				log_pa_xyz_u = self.log_pa_xyz(a_u_ext, unlabeled_x_ext, y_ext, z_u_ext)
 				log_pz_u = self.log_pz(z_u_ext)
-				log_qz_axy_u = -self.gaussian_nll_keepbatch(z_u_ext, z_mean_u_ext, z_mean_ln_var_u_ext)		# 'gaussian_nll_keepbatch' returns the negative log-likelihood
-				log_qa_x_u = -self.gaussian_nll_keepbatch(a_u_ext, a_mean_u_ext, a_ln_var_u_ext)
-				lower_bound_u += lower_bound(log_px_zy_u, log_py_u, log_pa_xyz_u, log_pz_u, log_qz_axy_u, log_qa_x_u)
+				log_qa_u = -self.gaussian_nll_keepbatch(a_u_ext, a_mean_u_ext, a_ln_var_u_ext)	# 'gaussian_nll_keepbatch' returns the negative log-likelihood
+				log_qz_u = -self.gaussian_nll_keepbatch(z_u_ext, z_mean_u_ext, z_mean_ln_var_u_ext)
+				lower_bound_u += lower_bound(log_px_u, log_py_u, log_pa_u, log_pz_u, log_qz_u, log_qa_u)
 
 			# take the average
 			if self.conf.n_mc_samples > 1:
@@ -597,41 +528,107 @@ class ADGM():
 
 		return loss, loss_labeled, loss_unlabeled
 
-	def compute_classification_loss(self, labeled_x, label_ids, test=False):
-		a = self.encoder_x_a(labeled_x, test=test, apply_f=True)
-		y_distribution = self.encoder_ax_y(a, labeled_x, softmax=False, test=test)
-		batchsize = labeled_x.data.shape[0]
-		n_types_of_label = y_distribution.data.shape[1]
+class ADGM(DGM):
+	# name is used for the filename when you save the model
+	def __init__(self, conf, name="adgm"):
+		conf.check()
+		self.conf = conf
+		self.name = name
 
-		loss = F.softmax_cross_entropy(y_distribution, label_ids)
-		return loss
+		# q(z|a, x, y)
+		self.encoder_axy_z = self.build_encoder_axy_z()
+		self.optimizer_encoder_axy_z = optimizers.Adam(alpha=conf.learning_rate, beta1=conf.gradient_momentum)
+		self.optimizer_encoder_axy_z.setup(self.encoder_axy_z)
+		# self.optimizer_encoder_axy_z.add_hook(optimizer.WeightDecay(0.00001))
+		self.optimizer_encoder_axy_z.add_hook(GradientClipping(conf.gradient_clipping))
 
-	def load(self, dir=None):
-		if dir is None:
-			raise Exception()
-		for attr in vars(self):
-			prop = getattr(self, attr)
-			if isinstance(prop, chainer.Chain) or isinstance(prop, chainer.optimizer.GradientMethod):
-				filename = dir + "/%s_%s.hdf5" % (self.name, attr)
-				if os.path.isfile(filename):
-					print "loading",  filename
-					serializers.load_hdf5(filename, prop)
-				else:
-					print filename, "missing."
-		print "model loaded."
+		# q(y|a, x)
+		self.encoder_ax_y = self.build_encoder_ax_y()
+		self.optimizer_encoder_ax_y = optimizers.Adam(alpha=conf.learning_rate, beta1=conf.gradient_momentum)
+		self.optimizer_encoder_ax_y.setup(self.encoder_ax_y)
+		# self.optimizer_encoder_ax_y.add_hook(optimizer.WeightDecay(0.00001))
+		self.optimizer_encoder_ax_y.add_hook(GradientClipping(conf.gradient_clipping))
 
-	def save(self, dir=None):
-		if dir is None:
-			raise Exception()
-		try:
-			os.mkdir(dir)
-		except:
-			pass
-		for attr in vars(self):
-			prop = getattr(self, attr)
-			if isinstance(prop, chainer.Chain) or isinstance(prop, chainer.optimizer.GradientMethod):
-				serializers.save_hdf5(dir + "/%s_%s.hdf5" % (self.name, attr), prop)
-		print "model saved."
+		# q(a|x)
+		self.encoder_x_a = self.build_encoder_x_a()
+		self.optimizer_encoder_x_a = optimizers.Adam(alpha=conf.learning_rate, beta1=conf.gradient_momentum)
+		self.optimizer_encoder_x_a.setup(self.encoder_x_a)
+		# self.optimizer_encoder_x_a.add_hook(optimizer.WeightDecay(0.00001))
+		self.optimizer_encoder_x_a.add_hook(GradientClipping(conf.gradient_clipping))
+
+		# p(x|y, z)
+		self.decoder_yz_x = self.build_decoder_yz_x()
+		self.optimizer_decoder_yz_x = optimizers.Adam(alpha=conf.learning_rate, beta1=conf.gradient_momentum)
+		self.optimizer_decoder_yz_x.setup(self.decoder_yz_x)
+		# self.optimizer_decoder_yz_x.add_hook(optimizer.WeightDecay(0.00001))
+		self.optimizer_decoder_yz_x.add_hook(GradientClipping(conf.gradient_clipping))
+
+		# p(a|x, y, z)
+		self.decoder_xyz_a = self.build_decoder_xyz_a()
+		self.optimizer_decoder_xyz_a = optimizers.Adam(alpha=conf.learning_rate, beta1=conf.gradient_momentum)
+		self.optimizer_decoder_xyz_a.setup(self.decoder_xyz_a)
+		# self.optimizer_decoder_xyz_a.add_hook(optimizer.WeightDecay(0.00001))
+		self.optimizer_decoder_xyz_a.add_hook(GradientClipping(conf.gradient_clipping))
+
+	def build_decoder_yz_x(self):
+		conf = self.conf
+		attributes = {}
+		units = zip(conf.decoder_yz_x_hidden_units[:-1], conf.decoder_yz_x_hidden_units[1:])
+		units += [(conf.decoder_yz_x_hidden_units[-1], conf.ndim_x)]
+		for i, (n_in, n_out) in enumerate(units):
+			attributes["layer_%i" % i] = L.Linear(n_in, n_out, initialW=np.random.normal(scale=conf.wscale, size=(n_out, n_in)))
+			if conf.batchnorm_before_activation:
+				attributes["batchnorm_%i" % i] = L.BatchNormalization(n_out)
+			else:
+				attributes["batchnorm_%i" % i] = L.BatchNormalization(n_in)
+		attributes["layer_merge_z"] = L.Linear(conf.ndim_z, conf.decoder_yz_x_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.decoder_yz_x_hidden_units[0], conf.ndim_z)))
+		attributes["layer_merge_y"] = L.Linear(conf.ndim_y, conf.decoder_yz_x_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.decoder_yz_x_hidden_units[0], conf.ndim_y)))
+		attributes["batchnorm_merge"] = L.BatchNormalization(conf.decoder_yz_x_hidden_units[0])
+
+		if conf.distribution_x == "bernoulli":
+			decoder_yz_x = BernoulliDecoder_YZ_X(**attributes)
+		else:
+			decoder_yz_x = GaussianDecoder_YZ_X(**attributes)
+		decoder_yz_x.n_layers = len(units)
+		decoder_yz_x.activation_function = conf.decoder_yz_x_activation_function
+		decoder_yz_x.apply_dropout = conf.decoder_yz_x_apply_dropout
+		decoder_yz_x.apply_batchnorm = conf.decoder_yz_x_apply_batchnorm
+		decoder_yz_x.apply_batchnorm_to_input = conf.decoder_yz_x_apply_batchnorm_to_input
+		decoder_yz_x.batchnorm_before_activation = conf.batchnorm_before_activation
+
+		if conf.gpu_enabled:
+			decoder_yz_x.to_gpu()
+
+		return decoder_yz_x
+
+	def zero_grads(self):
+		self.optimizer_encoder_axy_z.zero_grads()
+		self.optimizer_encoder_ax_y.zero_grads()
+		self.optimizer_encoder_x_a.zero_grads()
+		self.optimizer_decoder_yz_x.zero_grads()
+		self.optimizer_decoder_xyz_a.zero_grads()
+
+	def update(self):
+		self.optimizer_encoder_axy_z.update()
+		self.optimizer_encoder_ax_y.update()
+		self.optimizer_encoder_x_a.update()
+		self.optimizer_decoder_yz_x.update()
+		self.optimizer_decoder_xyz_a.update()
+
+	def decode_yz_x(self, y, z, test=False, apply_f=True):
+		return self.decoder_yz_x(y, z, test=test, apply_f=apply_f)
+
+	def log_px(self, a, x, y, z, test=False):
+		if isinstance(self.decoder_yz_x, BernoulliDecoder_YZ_X):
+			# do not apply F.sigmoid to the output of the decoder
+			raw_output = self.decoder_yz_x(y, z, test=test, apply_f=False)
+			negative_log_likelihood = self.bernoulli_nll_keepbatch(x, raw_output)
+			log_px_yz = -negative_log_likelihood
+		else:
+			x_mean, x_ln_var = self.decoder_yz_x(y, z, test=test, apply_f=False)
+			negative_log_likelihood = self.gaussian_nll_keepbatch(x, x_mean, x_ln_var)
+			log_px_yz = -negative_log_likelihood
+		return log_px_yz
 
 class MultiLayerPerceptron(chainer.Chain):
 	def __init__(self, **layers):
@@ -702,9 +699,9 @@ class SoftmaxEncoder_AX_Y(MultiLayerPerceptron):
 			return F.softmax(output)
 		return output
 
-class GaussianEncoder_X_A(chainer.Chain):
+class GaussianEncoder(chainer.Chain):
 	def __init__(self, **layers):
-		super(GaussianEncoder_X_A, self).__init__(**layers)
+		super(GaussianEncoder, self).__init__(**layers)
 		self.activation_function = "softplus"
 		self.apply_batchnorm_to_input = True
 		self.apply_batchnorm = True
@@ -751,7 +748,10 @@ class GaussianEncoder_X_A(chainer.Chain):
 			return F.gaussian(mean, ln_var)
 		return mean, ln_var
 
-class GaussianEncoder_AXY_Z(GaussianEncoder_X_A):
+class GaussianEncoder_X_A(GaussianEncoder):
+	pass
+
+class GaussianEncoder_AXY_Z(GaussianEncoder):
 
 	def merge_input(self, a, x, y):
 		f = activations[self.activation_function]
@@ -776,7 +776,7 @@ class GaussianEncoder_AXY_Z(GaussianEncoder_X_A):
 			return F.gaussian(mean, ln_var)
 		return mean, ln_var
 
-class GaussianDecoder_XYZ_A(GaussianEncoder_X_A):
+class GaussianDecoder_XYZ_A(GaussianEncoder):
 
 	def merge_input(self, x, y, z):
 		f = activations[self.activation_function]
@@ -801,7 +801,7 @@ class GaussianDecoder_XYZ_A(GaussianEncoder_X_A):
 			return F.gaussian(mean, ln_var)
 		return mean, ln_var
 
-class GaussianDecoder_YZ_X(GaussianEncoder_X_A):
+class GaussianDecoder_YZ_X(GaussianEncoder):
 
 	def merge_input(self, y, z):
 		f = activations[self.activation_function]

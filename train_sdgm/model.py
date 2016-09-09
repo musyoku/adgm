@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from args import args
-from adgm import ADGM, Conf
+from sdgm import SDGM, Conf
 
 conf = Conf()
 conf.gpu_enabled = True if args.gpu_enabled == 1 else False
@@ -34,11 +34,11 @@ conf.encoder_ax_y_apply_dropout = False
 conf.encoder_ax_y_apply_batchnorm = True
 conf.encoder_ax_y_apply_batchnorm_to_input = True
 
-conf.decoder_yz_x_hidden_units = [500, 500]
-conf.decoder_yz_x_activation_function = "elu"
-conf.decoder_yz_x_apply_dropout = False
-conf.decoder_yz_x_apply_batchnorm = True
-conf.decoder_yz_x_apply_batchnorm_to_input = True
+conf.decoder_ayz_x_hidden_units = [500, 500]
+conf.decoder_ayz_x_activation_function = "elu"
+conf.decoder_ayz_x_apply_dropout = False
+conf.decoder_ayz_x_apply_batchnorm = True
+conf.decoder_ayz_x_apply_batchnorm_to_input = True
 
 conf.decoder_xyz_a_hidden_units = [500, 500]
 conf.decoder_xyz_a_activation_function = "elu"
@@ -46,5 +46,5 @@ conf.decoder_xyz_a_apply_dropout = False
 conf.decoder_xyz_aapply_batchnorm = True
 conf.decoder_xyz_a_apply_batchnorm_to_input = True
 
-adgm = ADGM(conf, name="adgm")
-adgm.load(args.model_dir)
+sdgm = SDGM(conf, name="sdgm")
+sdgm.load(args.model_dir)
