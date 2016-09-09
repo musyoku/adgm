@@ -9,29 +9,26 @@ from chainer.utils import type_check
 from sklearn import preprocessing
 import matplotlib
 
-def load_images(image_dir, convert_to_grayscale=True, dist="bernoulli"):
+def load_images(image_dir, convert_to_grayscale=True):
 	dataset = []
 	fs = os.listdir(image_dir)
-	print "loading", len(fs), "images..."
+	i = 0
 	for fn in fs:
 		f = open("%s/%s" % (image_dir, fn), "rb")
 		if convert_to_grayscale:
 			img = np.asarray(Image.open(StringIO(f.read())).convert("L"), dtype=np.float32) / 255.0
 		else:
 			img = np.asarray(Image.open(StringIO(f.read())).convert("RGB"), dtype=np.float32).transpose(2, 0, 1) / 255.0
-		if dist == "bernoulli":
-			# Sampling
-			img = preprocessing.binarize(img, threshold=0.5)
-			pass
-		elif dist == "gaussian":
-			pass
-		else:
-			raise Exception()
 		dataset.append(img)
 		f.close()
+		i += 1
+		if i % 100 == 0:
+			sys.stdout.write("\rloading images...({:d} / {:d})".format(i, len(fs)))
+			sys.stdout.flush()
+	sys.stdout.write("\n")
 	return dataset
 
-def load_labeled_images(image_dir, convert_to_grayscale=True, dist="bernoulli"):
+def load_labeled_images(image_dir, convert_to_grayscale=True):
 	dataset = []
 	labels = []
 	fs = os.listdir(image_dir)
@@ -44,14 +41,6 @@ def load_labeled_images(image_dir, convert_to_grayscale=True, dist="bernoulli"):
 			img = np.asarray(Image.open(StringIO(f.read())).convert("L"), dtype=np.float32) / 255.0
 		else:
 			img = np.asarray(Image.open(StringIO(f.read())).convert("RGB"), dtype=np.float32).transpose(2, 0, 1) / 255.0
-		if dist == "bernoulli":
-			# Sampling
-			img = preprocessing.binarize(img, threshold=0.5)
-			pass
-		elif dist == "gaussian":
-			pass
-		else:
-			raise Exception()
 		dataset.append(img)
 		labels.append(label)
 		f.close()
@@ -104,36 +93,6 @@ def create_semisupervised(dataset, labels, num_validation_data=10000, num_labele
 
 	return training_labeled_x, training_labels, training_unlabeled_x, validation_x, validation_labels
 
-def sample_x_variable(batchsize, ndim_x, dataset, gpu_enabled=True):
-	x_batch = np.zeros((batchsize, ndim_x), dtype=np.float32)
-	indices = np.random.choice(np.arange(len(dataset), dtype=np.int32), size=batchsize, replace=False)
-	for j in range(batchsize):
-		data_index = indices[j]
-		img = dataset[data_index]
-		x_batch[j] = img.reshape((ndim_x,))
-	x_batch = Variable(x_batch)
-	if gpu_enabled:
-		x_batch.to_gpu()
-	return x_batch
-
-def sample_x_and_label_variables(batchsize, ndim_x, ndim_y, dataset, labels, gpu_enabled=True):
-	x_batch = np.zeros((batchsize, ndim_x), dtype=np.float32)
-	# one-hot
-	y_batch = np.zeros((batchsize, ndim_y), dtype=np.float32)
-	# label id
-	label_batch = np.zeros((batchsize,), dtype=np.int32)
-	indices = np.random.choice(np.arange(len(dataset), dtype=np.int32), size=batchsize, replace=False)
-	for j in range(batchsize):
-		data_index = indices[j]
-		img = dataset[data_index]
-		x_batch[j] = img.reshape((ndim_x,))
-		y_batch[j, labels[data_index]] = 1
-		label_batch[j] = labels[data_index]
-	x_batch = Variable(x_batch)
-	y_batch = Variable(y_batch)
-	label_batch = Variable(label_batch)
-	if gpu_enabled:
-		x_batch.to_gpu()
-		y_batch.to_gpu()
-		label_batch.to_gpu()
-	return x_batch, y_batch, label_batch
+def binarize_data(x):
+	threshold = np.random.uniform(size=x.shape)
+	return np.where(threshold < x, 1.0, 0.0).astype(np.float32)

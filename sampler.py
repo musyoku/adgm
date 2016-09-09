@@ -118,3 +118,27 @@ def supervised_swiss_roll(batchsize, n_dim, label_indices, n_labels, gpu_enabled
 	if gpu_enabled:
 		z.to_gpu()
 	return z
+
+def x_data(batchsize, ndim_x, dataset):
+	x_batch = np.zeros((batchsize, ndim_x), dtype=np.float32)
+	indices = np.random.choice(np.arange(len(dataset), dtype=np.int32), size=batchsize, replace=False)
+	for j in range(batchsize):
+		data_index = indices[j]
+		img = dataset[data_index]
+		x_batch[j] = img.reshape((ndim_x,))
+	return x_batch
+
+def x_and_label_data(batchsize, ndim_x, ndim_y, dataset, labels):
+	x_batch = np.zeros((batchsize, ndim_x), dtype=np.float32)
+	# one-hot
+	y_batch = np.zeros((batchsize, ndim_y), dtype=np.float32)
+	# label id
+	label_batch = np.zeros((batchsize,), dtype=np.int32)
+	indices = np.random.choice(np.arange(len(dataset), dtype=np.int32), size=batchsize, replace=False)
+	for j in range(batchsize):
+		data_index = indices[j]
+		img = dataset[data_index]
+		x_batch[j] = img.reshape((ndim_x,))
+		y_batch[j, labels[data_index]] = 1
+		label_batch[j] = labels[data_index]
+	return x_batch, y_batch, label_batch

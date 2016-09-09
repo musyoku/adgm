@@ -436,8 +436,8 @@ class ADGM():
 	def log_pa(self, a):
 		return self.log_pz(a)
 
-	def train(self, labeled_x, labeled_y, label_ids, unlabeled_x, test=False):
-		loss, loss_labeled, loss_unlabeled = self.compute_lower_bound_loss(labeled_x, labeled_y, label_ids, unlabeled_x, test=test)
+	def train(self, labeled_x, labeled_y, label_ids, unlabeled_x):
+		loss, loss_labeled, loss_unlabeled = self.compute_lower_bound_loss(labeled_x, labeled_y, label_ids, unlabeled_x, test=False)
 
 		self.zero_grads()
 		loss.backward()
@@ -453,8 +453,8 @@ class ADGM():
 
 		return loss_labeled.data, loss_unlabeled.data
 
-	def train_classification(self, labeled_x, label_ids, alpha=1.0, test=False):
-		loss = alpha * self.compute_classification_loss(labeled_x, label_ids, test=test)
+	def train_classification(self, labeled_x, label_ids, alpha=1.0):
+		loss = alpha * self.compute_classification_loss(labeled_x, label_ids, test=False)
 		self.zero_grads()
 		loss.backward()
 		self.update_classifier()
@@ -462,10 +462,10 @@ class ADGM():
 			loss.to_cpu()
 		return loss.data
 
-	def train_jointly(self, labeled_x, labeled_y, label_ids, unlabeled_x, alpha=1.0, test=False):
-		loss_lower_bound, loss_lb_labled, loss_lb_unlabled = self.compute_lower_bound_loss(labeled_x, labeled_y, label_ids, unlabeled_x, test=test)
+	def train_jointly(self, labeled_x, labeled_y, label_ids, unlabeled_x, alpha=1.0):
+		loss_lower_bound, loss_lb_labled, loss_lb_unlabled = self.compute_lower_bound_loss(labeled_x, labeled_y, label_ids, unlabeled_x, test=False)
 
-		loss_classification = alpha * self.compute_classification_loss(labeled_x, label_ids, test=test)
+		loss_classification = alpha * self.compute_classification_loss(labeled_x, label_ids, test=False)
 		loss = loss_lower_bound + loss_classification
 		self.zero_grads()
 		loss.backward()
