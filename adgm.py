@@ -50,11 +50,17 @@ class Conf():
 		self.encoder_ax_y_apply_batchnorm = True
 		self.encoder_ax_y_apply_batchnorm_to_input = True
 
-		self.decoder_hidden_units = [500, 500]
-		self.decoder_activation_function = "elu"
-		self.decoder_apply_dropout = False
-		self.decoder_apply_batchnorm = True
-		self.decoder_apply_batchnorm_to_input = True
+		self.decoder_yz_x_hidden_units = [500, 500]
+		self.decoder_yz_x_activation_function = "elu"
+		self.decoder_yz_x_apply_dropout = False
+		self.decoder_yz_x_apply_batchnorm = True
+		self.decoder_yz_x_apply_batchnorm_to_input = True
+
+		self.decoder_xyz_a_hidden_units = [500, 500]
+		self.decoder_xyz_a_activation_function = "elu"
+		self.decoder_xyz_a_apply_dropout = False
+		self.decoder_xyz_aapply_batchnorm = True
+		self.decoder_xyz_a_apply_batchnorm_to_input = True
 
 		self.gpu_enabled = True
 		self.learning_rate = 0.0003
@@ -62,7 +68,10 @@ class Conf():
 		self.gradient_clipping = 10.0
 
 	def check(self):
-		pass
+		base = Conf()
+		for attr, value in self.__dict__.iteritems():
+			if not hasattr(base, attr):
+				raise Exception("invalid parameter '{}'".format(attr))
 
 def sum_sqnorm(arr):
 	sq_sum = collections.defaultdict(float)
@@ -224,27 +233,27 @@ class ADGM():
 	def build_decoder_yz_x(self):
 		conf = self.conf
 		attributes = {}
-		units = zip(conf.decoder_hidden_units[:-1], conf.decoder_hidden_units[1:])
-		units += [(conf.decoder_hidden_units[-1], conf.ndim_x)]
+		units = zip(conf.decoder_yz_x_hidden_units[:-1], conf.decoder_yz_x_hidden_units[1:])
+		units += [(conf.decoder_yz_x_hidden_units[-1], conf.ndim_x)]
 		for i, (n_in, n_out) in enumerate(units):
 			attributes["layer_%i" % i] = L.Linear(n_in, n_out, initialW=np.random.normal(scale=conf.wscale, size=(n_out, n_in)))
 			if conf.batchnorm_before_activation:
 				attributes["batchnorm_%i" % i] = L.BatchNormalization(n_out)
 			else:
 				attributes["batchnorm_%i" % i] = L.BatchNormalization(n_in)
-		attributes["layer_merge_z"] = L.Linear(conf.ndim_z, conf.decoder_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.decoder_hidden_units[0], conf.ndim_z)))
-		attributes["layer_merge_y"] = L.Linear(conf.ndim_y, conf.decoder_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.decoder_hidden_units[0], conf.ndim_y)))
-		attributes["batchnorm_merge"] = L.BatchNormalization(conf.decoder_hidden_units[0])
+		attributes["layer_merge_z"] = L.Linear(conf.ndim_z, conf.decoder_yz_x_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.decoder_yz_x_hidden_units[0], conf.ndim_z)))
+		attributes["layer_merge_y"] = L.Linear(conf.ndim_y, conf.decoder_yz_x_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.decoder_yz_x_hidden_units[0], conf.ndim_y)))
+		attributes["batchnorm_merge"] = L.BatchNormalization(conf.decoder_yz_x_hidden_units[0])
 
 		if conf.distribution_x == "bernoulli":
 			decoder_yz_x = BernoulliDecoder_YZ_X(**attributes)
 		else:
 			decoder_yz_x = GaussianDecoder_YZ_X(**attributes)
 		decoder_yz_x.n_layers = len(units)
-		decoder_yz_x.activation_function = conf.decoder_activation_function
-		decoder_yz_x.apply_dropout = conf.decoder_apply_dropout
-		decoder_yz_x.apply_batchnorm = conf.decoder_apply_batchnorm
-		decoder_yz_x.apply_batchnorm_to_input = conf.decoder_apply_batchnorm_to_input
+		decoder_yz_x.activation_function = conf.decoder_yz_x_activation_function
+		decoder_yz_x.apply_dropout = conf.decoder_yz_x_apply_dropout
+		decoder_yz_x.apply_batchnorm = conf.decoder_yz_x_apply_batchnorm
+		decoder_yz_x.apply_batchnorm_to_input = conf.decoder_yz_x_apply_batchnorm_to_input
 		decoder_yz_x.batchnorm_before_activation = conf.batchnorm_before_activation
 
 		if conf.gpu_enabled:
@@ -255,7 +264,7 @@ class ADGM():
 	def build_decoder_xyz_a(self):
 		conf = self.conf
 		attributes = {}
-		units = zip(conf.encoder_xy_z_hidden_units[:-1], conf.encoder_xy_z_hidden_units[1:])
+		units = zip(conf.decoder_xyz_a_hidden_units[:-1], conf.decoder_xyz_a_hidden_units[1:])
 		for i, (n_in, n_out) in enumerate(units):
 			attributes["layer_%i" % i] = L.Linear(n_in, n_out, initialW=np.random.normal(scale=conf.wscale, size=(n_out, n_in)))
 			if conf.batchnorm_before_activation:
@@ -263,30 +272,30 @@ class ADGM():
 			else:
 				attributes["batchnorm_%i" % i] = L.BatchNormalization(n_in)
 
-		attributes["layer_merge_x"] = L.Linear(conf.ndim_x, conf.encoder_xy_z_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.encoder_xy_z_hidden_units[0], conf.ndim_x)))
-		attributes["layer_merge_y"] = L.Linear(conf.ndim_y, conf.encoder_xy_z_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.encoder_xy_z_hidden_units[0], conf.ndim_y)))
-		attributes["layer_merge_z"] = L.Linear(conf.ndim_z, conf.encoder_xy_z_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.encoder_xy_z_hidden_units[0], conf.ndim_z)))
+		attributes["layer_merge_x"] = L.Linear(conf.ndim_x, conf.decoder_xyz_a_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.decoder_xyz_a_hidden_units[0], conf.ndim_x)))
+		attributes["layer_merge_y"] = L.Linear(conf.ndim_y, conf.decoder_xyz_a_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.decoder_xyz_a_hidden_units[0], conf.ndim_y)))
+		attributes["layer_merge_z"] = L.Linear(conf.ndim_z, conf.decoder_xyz_a_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.decoder_xyz_a_hidden_units[0], conf.ndim_z)))
 
 		if conf.batchnorm_before_activation:
-			attributes["batchnorm_merge"] = L.BatchNormalization(conf.encoder_xy_z_hidden_units[0])
+			attributes["batchnorm_merge"] = L.BatchNormalization(conf.decoder_xyz_a_hidden_units[0])
 		else:
 			attributes["batchnorm_merge_x"] = L.BatchNormalization(conf.ndim_x)
 			attributes["batchnorm_merge_z"] = L.BatchNormalization(conf.ndim_z)
 
-		attributes["layer_output_mean"] = L.Linear(conf.encoder_xy_z_hidden_units[-1], conf.ndim_a, initialW=np.random.normal(scale=conf.wscale, size=(conf.ndim_a, conf.encoder_xy_z_hidden_units[-1])))
-		attributes["layer_output_var"] = L.Linear(conf.encoder_xy_z_hidden_units[-1], conf.ndim_a, initialW=np.random.normal(scale=conf.wscale, size=(conf.ndim_a, conf.encoder_xy_z_hidden_units[-1])))
-		encoder_axy_z = GaussianDecoder_XYZ_A(**attributes)
-		encoder_axy_z.n_layers = len(units)
-		encoder_axy_z.activation_function = conf.encoder_xy_z_activation_function
-		encoder_axy_z.apply_dropout = conf.encoder_xy_z_apply_dropout
-		encoder_axy_z.apply_batchnorm = conf.encoder_xy_z_apply_batchnorm
-		encoder_axy_z.apply_batchnorm_to_input = conf.encoder_xy_z_apply_batchnorm_to_input
-		encoder_axy_z.batchnorm_before_activation = conf.batchnorm_before_activation
+		attributes["layer_output_mean"] = L.Linear(conf.decoder_xyz_a_hidden_units[-1], conf.ndim_a, initialW=np.random.normal(scale=conf.wscale, size=(conf.ndim_a, conf.decoder_xyz_a_hidden_units[-1])))
+		attributes["layer_output_var"] = L.Linear(conf.decoder_xyz_a_hidden_units[-1], conf.ndim_a, initialW=np.random.normal(scale=conf.wscale, size=(conf.ndim_a, conf.decoder_xyz_a_hidden_units[-1])))
+		decoder_xyz_a = GaussianDecoder_XYZ_A(**attributes)
+		decoder_xyz_a.n_layers = len(units)
+		decoder_xyz_a.activation_function = conf.decoder_xyz_a_activation_function
+		decoder_xyz_a.apply_dropout = conf.decoder_xyz_a_apply_dropout
+		decoder_xyz_a.apply_batchnorm = conf.decoder_xyz_aapply_batchnorm
+		decoder_xyz_a.apply_batchnorm_to_input = conf.decoder_xyz_a_apply_batchnorm_to_input
+		decoder_xyz_a.batchnorm_before_activation = conf.batchnorm_before_activation
 
 		if conf.gpu_enabled:
-			encoder_axy_z.to_gpu()
+			decoder_xyz_a.to_gpu()
 
-		return encoder_axy_z
+		return decoder_xyz_a
 
 	def train(self, x, L=1, test=False):
 		raise Exception()
@@ -497,8 +506,8 @@ class ADGM():
 			log_py_l = self.log_py(labeled_y)
 			log_pa_xyz_l = self.log_pa_xyz(a_l, labeled_x, labeled_y, z_l)
 			log_pz_l = self.log_pz(z_l)
-			log_qz_axy_l = self.gaussian_nll_keepbatch(z_l, z_mean_l, z_ln_var_l)
-			log_qa_x_l = self.gaussian_nll_keepbatch(a_l, a_mean_l, a_ln_var_l)
+			log_qz_axy_l = -self.gaussian_nll_keepbatch(z_l, z_mean_l, z_ln_var_l)	# 'gaussian_nll_keepbatch' returns the negative log-likelihood
+			log_qa_x_l = -self.gaussian_nll_keepbatch(a_l, a_mean_l, a_ln_var_l)
 			lower_bound_l += lower_bound(log_px_zy_l, log_py_l, log_pa_xyz_l, log_pz_l, log_qz_axy_l, log_qa_x_l)
 		if self.conf.n_mc_samples > 1:
 			lower_bound_l /= self.conf.n_mc_samples
@@ -535,8 +544,8 @@ class ADGM():
 				log_py_u = self.log_py(y_ext)
 				log_pa_xyz_u = self.log_pa_xyz(a_u_ext, unlabeled_x_ext, y_ext, z_u_ext)
 				log_pz_u = self.log_pz(z_u_ext)
-				log_qz_axy_u = self.gaussian_nll_keepbatch(z_u_ext, z_mean_u_ext, z_mean_ln_var_u_ext)
-				log_qa_x_u = self.gaussian_nll_keepbatch(a_u_ext, a_mean_u_ext, a_ln_var_u_ext)
+				log_qz_axy_u = -self.gaussian_nll_keepbatch(z_u_ext, z_mean_u_ext, z_mean_ln_var_u_ext)		# 'gaussian_nll_keepbatch' returns the negative log-likelihood
+				log_qa_x_u = -self.gaussian_nll_keepbatch(a_u_ext, a_mean_u_ext, a_ln_var_u_ext)
 				lower_bound_u += lower_bound(log_px_zy_u, log_py_u, log_pa_xyz_u, log_pz_u, log_qz_axy_u, log_qa_x_u)
 			if self.conf.n_mc_samples > 1:
 				lower_bound_u /= self.conf.n_mc_samples
