@@ -427,35 +427,42 @@ class DGM():
 		batchsize_l = labeled_x.data.shape[0]
 		batchsize_u = unlabeled_x.data.shape[0]
 		n_types_of_label = labeled_y.data.shape[1]
+		n_mc_samples = self.conf.n_mc_samples
 		xp = self.xp
 
 		### Lower bound for labeled data ###
-		a_mean_l, a_ln_var_l = self.encoder_x_a(labeled_x, test=test, apply_f=False)
+		labeled_x_repeat = labeled_x
+		labeled_y_repeat = labeled_y
 
-		lower_bound_l = 0
-		for n in xrange(self.conf.n_mc_samples):
-			a_l = F.gaussian(a_mean_l, a_ln_var_l)
-			z_mean_l, z_ln_var_l = self.encoder_axy_z(a_l, labeled_x, labeled_y, test=test, apply_f=False)
-			z_l = F.gaussian(z_mean_l, z_ln_var_l)
+		# repeat n_mc_samples times
+		if n_mc_samples > 1:
+			labeled_x_repeat = Variable(xp.repeat(labeled_x.data, n_mc_samples, axis=0))
+			labeled_y_repeat = Variable(xp.repeat(labeled_y.data, n_mc_samples, axis=0))
 
-			# compute lower bound
-			log_pa_l = self.log_pa(a_l, labeled_x, labeled_y, z_l)
-			log_px_l = self.log_px(a_l, labeled_x, labeled_y, z_l, test=test)
-			log_py_l = self.log_py(labeled_y)
-			log_pz_l = self.log_pz(z_l)
-			log_qa_l = -self.gaussian_nll_keepbatch(a_l, a_mean_l, a_ln_var_l)	# 'gaussian_nll_keepbatch' returns the negative log-likelihood
-			log_qz_l = -self.gaussian_nll_keepbatch(z_l, z_mean_l, z_ln_var_l)
-			lower_bound_l += lower_bound(log_px_l, log_py_l, log_pa_l, log_pz_l, log_qz_l, log_qa_l)
+
+		a_mean_l, a_ln_var_l = self.encoder_x_a(labeled_x_repeat, test=test, apply_f=False)
+		a_l = F.gaussian(a_mean_l, a_ln_var_l)
+		z_mean_l, z_ln_var_l = self.encoder_axy_z(a_l, labeled_x_repeat, labeled_y_repeat, test=test, apply_f=False)
+		z_l = F.gaussian(z_mean_l, z_ln_var_l)
+
+		# compute lower bound
+		log_pa_l = self.log_pa(a_l, labeled_x_repeat, labeled_y_repeat, z_l)
+		log_px_l = self.log_px(a_l, labeled_x_repeat, labeled_y_repeat, z_l, test=test)
+		log_py_l = self.log_py(labeled_y_repeat)
+		log_pz_l = self.log_pz(z_l)
+		log_qa_l = -self.gaussian_nll_keepbatch(a_l, a_mean_l, a_ln_var_l)	# 'gaussian_nll_keepbatch' returns the negative log-likelihood
+		log_qz_l = -self.gaussian_nll_keepbatch(z_l, z_mean_l, z_ln_var_l)
+		lower_bound_l = lower_bound(log_px_l, log_py_l, log_pa_l, log_pz_l, log_qz_l, log_qa_l)
 
 		# take the average
-		if self.conf.n_mc_samples > 1:
-			lower_bound_l /= self.conf.n_mc_samples
+		if n_mc_samples > 1:
+			lower_bound_l /= n_mc_samples
 
 		### Lower bound for unlabeled data ###
 		if batchsize_u > 0:
 			# To marginalize y, we repeat unlabeled x, and construct a target (batchsize_u * n_types_of_label) x n_types_of_label
 			# Example of n-dimensional x and target matrix for a 3 class problem and batch_size=2.
-			#         unlabeled_x_ext                 y_ext
+			#       unlabeled_x_repeat              y_repeat
 			#  [[x0[0], x0[1], ..., x0[n]]         [[1, 0, 0]
 			#   [x1[0], x1[1], ..., x1[n]]          [1, 0, 0]
 			#   [x0[0], x0[1], ..., x0[n]]          [0, 1, 0]
@@ -463,35 +470,39 @@ class DGM():
 			#   [x0[0], x0[1], ..., x0[n]]          [0, 0, 1]
 			#   [x1[0], x1[1], ..., x1[n]]]         [0, 0, 1]]
 
-			# create data
-			unlabeled_x_ext = xp.zeros((batchsize_u * n_types_of_label, unlabeled_x.data.shape[1]), dtype=xp.float32)
-			y_ext = xp.zeros((batchsize_u * n_types_of_label, n_types_of_label), dtype=xp.float32)
+			# marginalize x and y
+			unlabeled_x_marg = xp.zeros((batchsize_u * n_types_of_label, unlabeled_x.data.shape[1]), dtype=xp.float32)
+			y_marg = xp.repeat(xp.identity(n_types_of_label, dtype=xp.float32), batchsize_u, axis=0)
 			for n in xrange(n_types_of_label):
-				y_ext[n * batchsize_u:(n + 1) * batchsize_u, n] = 1
-				unlabeled_x_ext[n * batchsize_u:(n + 1) * batchsize_u] = unlabeled_x.data
-			y_ext = Variable(y_ext)
-			unlabeled_x_ext = Variable(unlabeled_x_ext)
+				unlabeled_x_marg[n * batchsize_u:(n + 1) * batchsize_u] = unlabeled_x.data
 
-			a_mean_u_ext, a_ln_var_u_ext = self.encoder_x_a(unlabeled_x_ext, test=test, apply_f=False)
+			# repeat n_mc_samples times
+			unlabeled_x_repeat = unlabeled_x_marg
+			y_repeat = y_marg
+			n_rows_marg = unlabeled_x_marg.shape[0]
+			if n_mc_samples > 1:
+				n_rows = n_rows_marg * n_mc_samples
+				unlabeled_x_repeat = xp.zeros((n_rows, unlabeled_x_marg.shape[1]), dtype=xp.float32)
+				y_repeat = xp.zeros((n_rows, n_types_of_label), dtype=xp.float32)
+				for n in xrange(n_mc_samples):
+					unlabeled_x_repeat[n * n_rows_marg:(n + 1) * n_rows_marg] = unlabeled_x_marg
+					y_repeat[n * n_rows_marg:(n + 1) * n_rows_marg] = y_marg
+			unlabeled_x_repeat = Variable(unlabeled_x_repeat)
+			y_repeat = Variable(y_repeat)
 
-			_lower_bound_u = 0
-			for n in xrange(self.conf.n_mc_samples):
-				a_u_ext = F.gaussian(a_mean_u_ext, a_ln_var_u_ext)
-				z_mean_u_ext, z_mean_ln_var_u_ext = self.encoder_axy_z(a_u_ext, unlabeled_x_ext, y_ext, test=test, apply_f=False)
-				z_u_ext = F.gaussian(z_mean_u_ext, z_mean_ln_var_u_ext)
+			a_mean_u, a_ln_var_u = self.encoder_x_a(unlabeled_x_repeat, test=test, apply_f=False)
+			a_u = F.gaussian(a_mean_u, a_ln_var_u)
+			z_mean_u, z_mean_ln_var_u = self.encoder_axy_z(a_u, unlabeled_x_repeat, y_repeat, test=test, apply_f=False)
+			z_u = F.gaussian(z_mean_u, z_mean_ln_var_u)
 
-				# compute lower bound
-				log_pa_u = self.log_pa(a_u_ext, unlabeled_x_ext, y_ext, z_u_ext)
-				log_px_u = self.log_px(a_u_ext, unlabeled_x_ext, y_ext, z_u_ext, test=test)
-				log_py_u = self.log_py(y_ext)
-				log_pz_u = self.log_pz(z_u_ext)
-				log_qa_u = -self.gaussian_nll_keepbatch(a_u_ext, a_mean_u_ext, a_ln_var_u_ext)	# 'gaussian_nll_keepbatch' returns the negative log-likelihood
-				log_qz_u = -self.gaussian_nll_keepbatch(z_u_ext, z_mean_u_ext, z_mean_ln_var_u_ext)
-				_lower_bound_u += lower_bound(log_px_u, log_py_u, log_pa_u, log_pz_u, log_qz_u, log_qa_u)
-
-			# take the average
-			if self.conf.n_mc_samples > 1:
-				_lower_bound_u /= self.conf.n_mc_samples
+			# compute lower bound
+			log_pa_u = self.log_pa(a_u, unlabeled_x_repeat, y_repeat, z_u)
+			log_px_u = self.log_px(a_u, unlabeled_x_repeat, y_repeat, z_u, test=test)
+			log_py_u = self.log_py(y_repeat)
+			log_pz_u = self.log_pz(z_u)
+			log_qa_u = -self.gaussian_nll_keepbatch(a_u, a_mean_u, a_ln_var_u)	# 'gaussian_nll_keepbatch' returns the negative log-likelihood
+			log_qz_u = -self.gaussian_nll_keepbatch(z_u, z_mean_u, z_mean_ln_var_u)
+			lower_bound_u = lower_bound(log_px_u, log_py_u, log_pa_u, log_pz_u, log_qz_u, log_qa_u)
 
 			# Compute sum_y{q(y|x){-L(x,y) + H(q(y|x))}}
 			# Let LB(xn, y) be the lower bound for an input image xn and a label y (y = 0, 1, ..., 9).
@@ -515,19 +526,29 @@ class DGM():
 			#                   .
 			#                   .
 			#  [LB(x_bs,0), LB(x_bs,1), ..., LB(x_bs,9)]]
-			_lower_bound_u = F.transpose(F.reshape(_lower_bound_u, (n_types_of_label, batchsize_u)))
-			
+			if n_mc_samples > 1:
+				lower_bound_u = F.reshape(lower_bound_u, (n_mc_samples, n_types_of_label, -1))
+				lower_bound_u = F.transpose(lower_bound_u, (0, 2, 1))
+				lower_bound_u = F.reshape(lower_bound_u, (n_mc_samples * batchsize_u, -1))
+			else:
+				lower_bound_u = F.transpose(F.reshape(lower_bound_u, (n_types_of_label, -1)))
+
 			# take expectations w.r.t 'y'
-			lower_bound_u = 0
-			for n in xrange(self.conf.n_mc_samples):
-				a_u = self.encoder_x_a(unlabeled_x, test=test, apply_f=True)
-				y_distribution = self.encoder_ax_y(a_u, unlabeled_x, test=test, softmax=True)
-				lower_bound_u += y_distribution * (_lower_bound_u - F.log(y_distribution + 1e-6))
+			unlabeled_x_repeat = unlabeled_x
+			if n_mc_samples > 1:
+				unlabeled_x_repeat = xp.zeros((batchsize_u * n_mc_samples, unlabeled_x.data.shape[1]), dtype=xp.float32)
+				for n in xrange(n_mc_samples):
+					unlabeled_x_repeat[n * batchsize_u:(n + 1) * batchsize_u] = unlabeled_x.data
+				unlabeled_x_repeat = Variable(unlabeled_x_repeat)
+
+			a_u = self.encoder_x_a(unlabeled_x_repeat, test=test, apply_f=True)
+			y_distribution = self.encoder_ax_y(a_u, unlabeled_x_repeat, test=test, softmax=True)
+			lower_bound_u = y_distribution * (lower_bound_u - F.log(y_distribution + 1e-6))
 
 			# take the average
-			if self.conf.n_mc_samples > 1:
-				lower_bound_u /= self.conf.n_mc_samples
-				
+			if n_mc_samples > 1:
+				lower_bound_u /= n_mc_samples
+
 			# loss = -1 * lower bound
 			loss_labeled = -F.sum(lower_bound_l) / batchsize_l
 			loss_unlabeled = -F.sum(lower_bound_u) / batchsize_u

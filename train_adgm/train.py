@@ -53,7 +53,7 @@ def sample_unlabeled_data():
 
 max_epoch = 1000
 n_trains_per_epoch = 500
-n_types_of_label = 10
+n_types_of_label = conf.ndim_y
 n_labeled_data = args.n_labeled_data
 n_validation_data = args.n_validation_data
 batchsize_labeled = 100
