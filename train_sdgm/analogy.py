@@ -4,23 +4,29 @@ import numpy as np
 from chainer import cuda, Variable
 import matplotlib.patches as mpatches
 sys.path.append(os.path.split(os.getcwd())[0])
-import util
+import util, sampler
 from args import args
-from model import conf, adgm
+from model import conf, sdgm
 
 try:
-	os.mkdir(args.vis_dir)
+	os.mkdir(args.plot_dir)
 except:
 	pass
 
-dataset = util.load_images(args.test_image_dir, dist=conf.distribution_x)
+# load all images
+dataset_all = util.load_images(args.test_image_dir)
 
 n_analogies = 10
 n_image_channels = 1
 image_width = 28
 image_height = 28
-x = util.sample_x_variable(10, conf.ndim_x, dataset, gpu_enabled=conf.gpu_enabled)
-z = adgm.encode_x_z(x, argmax=True, test=True)
+
+# sample data
+x = sampler.x_data(10, conf.ndim_x, dataset_all)
+x = Variable(x)
+if conf.gpu_enabled:
+	x.to_gpu()
+z = sdgm.encode_x_z(x, argmax=True, test=True)
 
 fig = pylab.gcf()
 fig.set_size_inches(16.0, 16.0)
@@ -45,7 +51,8 @@ for m in xrange(n_analogies):
 	for n in xrange(conf.ndim_y):
 		base_z[n] = z.data[m]
 	base_z = Variable(base_z)
-	_x = adgm.decode_zy_x(base_z, all_y, test=True, apply_f=True)
+	a = sdgm.decode_yz_a(all_y, base_z, test=True, apply_f=True)
+	_x = sdgm.decode_ayz_x(a, all_y, base_z, test=True, apply_f=True)
 	if conf.gpu_enabled:
 		_x.to_cpu()
 	for n in xrange(conf.ndim_y):
@@ -56,5 +63,5 @@ for m in xrange(n_analogies):
 			pylab.imshow(_x.data[n].reshape((n_image_channels, image_width, image_height)), interpolation="none")
 		pylab.axis("off")
 
-pylab.savefig("{:s}/analogy.png".format(args.vis_dir))
+pylab.savefig("{:s}/analogy.png".format(args.plot_dir))
 

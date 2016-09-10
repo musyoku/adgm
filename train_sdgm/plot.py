@@ -4,13 +4,12 @@ import numpy as np
 from chainer import cuda, Variable
 import matplotlib.patches as mpatches
 sys.path.append(os.path.split(os.getcwd())[0])
-import util
-import visualizer
+import util, sampler, visualizer
 from args import args
-from model import conf, adgm
+from model import conf, sdgm
 
-def sample_labeled_data():
-	x_labeled, y_labeled, label_ids = sampler.x_and_label_data(batchsize_labeled, conf.ndim_x, conf.ndim_y, dataset_labeled, label_ids_labeled)
+def sample_labeled_data(num_images):
+	x_labeled, y_labeled, label_ids = sampler.x_and_label_data(num_images, conf.ndim_x, conf.ndim_y, dataset_all, label_ids_all)
 
 	# binalize
 	x_labeled = util.binarize_data(x_labeled)
@@ -22,12 +21,13 @@ def sample_labeled_data():
 	return x_labeled, y_labeled, label_ids
 	
 def forward_one_step(num_images):
-	x, y_labeled, label_ids = sample_labeled_data()
+	x, y_labeled, label_ids = sample_labeled_data(num_images)
 	x.to_gpu()
-	a = adgm.encode_x_a(x, test=True)
-	y = adgm.sample_ax_y(a, x, argmax=True, test=True)
-	z = adgm.encode_axy_z(a, x, y, test=True)
-	_x = adgm.decode_ayz_x(a, y, z, test=True)
+	a = sdgm.encode_x_a(x, test=True)
+	y = sdgm.sample_ax_y(a, x, argmax=True, test=True)
+	z = sdgm.encode_axy_z(a, x, y, test=True)
+	a = sdgm.decode_yz_a(y, z, test=True, apply_f=True)
+	_x = sdgm.decode_ayz_x(a, y, z, test=True, apply_f=True)
 	if conf.gpu_enabled:
 		z.to_cpu()
 		a.to_cpu()
@@ -40,9 +40,10 @@ try:
 except:
 	pass
 
-dataset, labels = util.load_labeled_images(args.test_image_dir)
+# load all images
+dataset_all, label_ids_all = util.load_labeled_images(args.test_image_dir)
 
-a, z, _x, _ = forward_one_step(100)
+_, _, _x, _ = forward_one_step(100)
 visualizer.tile_x(_x, dir=args.plot_dir)
 
 a, z, _x, label_ids = forward_one_step(5000)
