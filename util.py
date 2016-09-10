@@ -51,7 +51,7 @@ def load_labeled_images(image_dir, convert_to_grayscale=True):
 	sys.stdout.write("\n")
 	return dataset, labels
 
-def create_semisupervised(dataset, labels, num_validation_data=10000, num_labeled_data=100, num_types_of_label=10):
+def create_semisupervised(dataset, labels, num_validation_data=10000, num_labeled_data=100, num_types_of_label=10, seed=0):
 	if len(dataset) < num_validation_data + num_labeled_data:
 		raise Exception("len(dataset) < num_validation_data + num_labeled_data")
 	training_labeled_x = []
@@ -63,6 +63,7 @@ def create_semisupervised(dataset, labels, num_validation_data=10000, num_labele
 	num_data_per_label = int(num_labeled_data / num_types_of_label)
 	num_unlabeled_data = len(dataset) - num_validation_data - num_labeled_data
 
+	np.random.seed(seed)
 	indices = np.arange(len(dataset))
 	np.random.shuffle(indices)
 
@@ -90,6 +91,9 @@ def create_semisupervised(dataset, labels, num_validation_data=10000, num_labele
 			else:
 				validation_x.append(dataset[index])
 				validation_labels.append(labels[index])
+
+	# reset seed
+	np.random.seed()
 
 	return training_labeled_x, training_labels, training_unlabeled_x, validation_x, validation_labels
 

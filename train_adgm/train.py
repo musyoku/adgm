@@ -66,7 +66,7 @@ csv_epochs = []
 dataset_all, label_ids_all = util.load_labeled_images(args.train_image_dir)
 
 # Create labeled/unlabeled split in training set
-dataset_labeled, label_ids_labeled, dataset_unlabeld, dataset_validation, label_ids_validation = util.create_semisupervised(dataset_all, label_ids_all, n_validation_data, n_labeled_data, n_types_of_label)
+dataset_labeled, label_ids_labeled, dataset_unlabeld, dataset_validation, label_ids_validation = util.create_semisupervised(dataset_all, label_ids_all, n_validation_data, n_labeled_data, n_types_of_label, seed=args.seed_ssl_split)
 print "labels for supervised training:", label_ids_labeled
 # alpha = 0.1 * len(dataset) / len(dataset_labeled)
 alpha = 1.0
@@ -80,6 +80,10 @@ if n_labeled_data < batchsize_labeled:
 if len(dataset_unlabeld) < batchsize_unlabeled:
 	batchsize_unlabeled = len(dataset_unlabeld)
 
+# seed
+np.random.seed(args.seed)
+if conf.gpu_enabled:
+    cuda.cupy.random.seed(args.seed)
 
 total_time = 0
 for epoch in xrange(max_epoch):
