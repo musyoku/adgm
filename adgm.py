@@ -474,7 +474,7 @@ class DGM():
 
 			a_mean_u_ext, a_ln_var_u_ext = self.encoder_x_a(unlabeled_x_ext, test=test, apply_f=False)
 
-			lower_bound_u = 0
+			_lower_bound_u = 0
 			for n in xrange(self.conf.n_mc_samples):
 				a_u_ext = F.gaussian(a_mean_u_ext, a_ln_var_u_ext)
 				z_mean_u_ext, z_mean_ln_var_u_ext = self.encoder_axy_z(a_u_ext, unlabeled_x_ext, y_ext, test=test, apply_f=False)
@@ -487,11 +487,11 @@ class DGM():
 				log_pz_u = self.log_pz(z_u_ext)
 				log_qa_u = -self.gaussian_nll_keepbatch(a_u_ext, a_mean_u_ext, a_ln_var_u_ext)	# 'gaussian_nll_keepbatch' returns the negative log-likelihood
 				log_qz_u = -self.gaussian_nll_keepbatch(z_u_ext, z_mean_u_ext, z_mean_ln_var_u_ext)
-				lower_bound_u += lower_bound(log_px_u, log_py_u, log_pa_u, log_pz_u, log_qz_u, log_qa_u)
+				_lower_bound_u += lower_bound(log_px_u, log_py_u, log_pa_u, log_pz_u, log_qz_u, log_qa_u)
 
 			# take the average
 			if self.conf.n_mc_samples > 1:
-				lower_bound_u /= self.conf.n_mc_samples
+				_lower_bound_u /= self.conf.n_mc_samples
 
 			# Compute sum_y{q(y|x){-L(x,y) + H(q(y|x))}}
 			# Let LB(xn, y) be the lower bound for an input image xn and a label y (y = 0, 1, ..., 9).
@@ -515,13 +515,19 @@ class DGM():
 			#                   .
 			#                   .
 			#  [LB(x_bs,0), LB(x_bs,1), ..., LB(x_bs,9)]]
-			lower_bound_u = F.transpose(F.reshape(lower_bound_u, (n_types_of_label, batchsize_u)))
+			_lower_bound_u = F.transpose(F.reshape(_lower_bound_u, (n_types_of_label, batchsize_u)))
 			
 			# take expectations w.r.t 'y'
-			a_u = self.encoder_x_a(unlabeled_x, test=test, apply_f=True)
-			y_distribution = self.encoder_ax_y(a_u, unlabeled_x, test=test, softmax=True)
-			lower_bound_u = y_distribution * (lower_bound_u - F.log(y_distribution + 1e-6))
+			lower_bound_u = 0
+			for n in xrange(self.conf.n_mc_samples):
+				a_u = self.encoder_x_a(unlabeled_x, test=test, apply_f=True)
+				y_distribution = self.encoder_ax_y(a_u, unlabeled_x, test=test, softmax=True)
+				lower_bound_u += y_distribution * (_lower_bound_u - F.log(y_distribution + 1e-6))
 
+			# take the average
+			if self.conf.n_mc_samples > 1:
+				lower_bound_u /= self.conf.n_mc_samples
+				
 			# loss = -1 * lower bound
 			loss_labeled = -F.sum(lower_bound_l) / batchsize_l
 			loss_unlabeled = -F.sum(lower_bound_u) / batchsize_u
