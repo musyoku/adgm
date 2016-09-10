@@ -59,7 +59,7 @@ class Conf():
 		self.decoder_xyz_a_hidden_units = [500, 500]
 		self.decoder_xyz_a_activation_function = "elu"
 		self.decoder_xyz_a_apply_dropout = False
-		self.decoder_xyz_aapply_batchnorm = True
+		self.decoder_xyz_a_apply_batchnorm = True
 		self.decoder_xyz_a_apply_batchnorm_to_input = True
 
 		self.gpu_enabled = True
@@ -217,7 +217,7 @@ class DGM():
 		decoder_xyz_a.n_layers = len(units)
 		decoder_xyz_a.activation_function = conf.decoder_xyz_a_activation_function
 		decoder_xyz_a.apply_dropout = conf.decoder_xyz_a_apply_dropout
-		decoder_xyz_a.apply_batchnorm = conf.decoder_xyz_aapply_batchnorm
+		decoder_xyz_a.apply_batchnorm = conf.decoder_xyz_a_apply_batchnorm
 		decoder_xyz_a.apply_batchnorm_to_input = conf.decoder_xyz_a_apply_batchnorm_to_input
 		decoder_xyz_a.batchnorm_before_activation = conf.batchnorm_before_activation
 
@@ -593,6 +593,8 @@ class ADGM(DGM):
 		if conf.distribution_x == "bernoulli":
 			decoder_yz_x = BernoulliDecoder_YZ_X(**attributes)
 		else:
+			attributes["layer_output_mean"] = L.Linear(conf.decoder_yz_x_hidden_units[-1], conf.ndim_x, initialW=np.random.normal(scale=conf.wscale, size=(conf.ndim_x, conf.decoder_yz_x_hidden_units[-1])))
+			attributes["layer_output_var"] = L.Linear(conf.decoder_yz_x_hidden_units[-1], conf.ndim_x, initialW=np.random.normal(scale=conf.wscale, size=(conf.ndim_x, conf.decoder_yz_x_hidden_units[-1])))
 			decoder_yz_x = GaussianDecoder_YZ_X(**attributes)
 		decoder_yz_x.n_layers = len(units)
 		decoder_yz_x.activation_function = conf.decoder_yz_x_activation_function
@@ -819,6 +821,10 @@ class GaussianDecoder_YZ_X(GaussianEncoder):
 			merged_input = f(self.layer_merge_z(z) + self.layer_merge_y(y))
 
 		return merged_input
+
+	def forward_one_step(self, y, z):
+		merged_input = self.merge_input(y, z)
+		return self.compute_output(merged_input)
 
 	def __call__(self, y, z, test=False, apply_f=False):
 		self.test = test

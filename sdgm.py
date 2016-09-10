@@ -48,11 +48,11 @@ class Conf():
 		self.decoder_ayz_x_apply_batchnorm = True
 		self.decoder_ayz_x_apply_batchnorm_to_input = True
 
-		self.decoder_xyz_a_hidden_units = [500, 500]
-		self.decoder_xyz_a_activation_function = "elu"
-		self.decoder_xyz_a_apply_dropout = False
-		self.decoder_xyz_aapply_batchnorm = True
-		self.decoder_xyz_a_apply_batchnorm_to_input = True
+		self.decoder_yz_a_hidden_units = [500, 500]
+		self.decoder_yz_a_activation_function = "elu"
+		self.decoder_yz_a_apply_dropout = False
+		self.decoder_yz_a_apply_batchnorm = True
+		self.decoder_yz_a_apply_batchnorm_to_input = True
 
 		self.gpu_enabled = True
 		self.learning_rate = 0.0003
@@ -148,7 +148,6 @@ class SDGM(DGM):
 		conf = self.conf
 		attributes = {}
 		units = zip(conf.decoder_yz_a_hidden_units[:-1], conf.decoder_yz_a_hidden_units[1:])
-		units += [(conf.decoder_yz_a_hidden_units[-1], conf.ndim_x)]
 		for i, (n_in, n_out) in enumerate(units):
 			attributes["layer_%i" % i] = L.Linear(n_in, n_out, initialW=np.random.normal(scale=conf.wscale, size=(n_out, n_in)))
 			if conf.batchnorm_before_activation:
@@ -157,8 +156,10 @@ class SDGM(DGM):
 				attributes["batchnorm_%i" % i] = L.BatchNormalization(n_in)
 		attributes["layer_merge_z"] = L.Linear(conf.ndim_z, conf.decoder_yz_a_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.decoder_yz_a_hidden_units[0], conf.ndim_z)))
 		attributes["layer_merge_y"] = L.Linear(conf.ndim_y, conf.decoder_yz_a_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.decoder_yz_a_hidden_units[0], conf.ndim_y)))
+		attributes["layer_output_mean"] = L.Linear(conf.decoder_yz_a_hidden_units[-1], conf.ndim_a, initialW=np.random.normal(scale=conf.wscale, size=(conf.ndim_a, conf.decoder_yz_a_hidden_units[-1])))
+		attributes["layer_output_var"] = L.Linear(conf.decoder_yz_a_hidden_units[-1], conf.ndim_a, initialW=np.random.normal(scale=conf.wscale, size=(conf.ndim_a, conf.decoder_yz_a_hidden_units[-1])))
 		attributes["batchnorm_merge"] = L.BatchNormalization(conf.decoder_yz_a_hidden_units[0])
-
+		
 		decoder_yz_a = GaussianDecoder_YZ_A(**attributes)
 		decoder_yz_a.n_layers = len(units)
 		decoder_yz_a.activation_function = conf.decoder_yz_a_activation_function
@@ -223,6 +224,10 @@ class GaussianDecoder_YZ_A(GaussianEncoder):
 			merged_input = f(self.layer_merge_z(z) + self.layer_merge_y(y))
 
 		return merged_input
+
+	def forward_one_step(self, y, z):
+		merged_input = self.merge_input(y, z)
+		return self.compute_output(merged_input)
 
 	def __call__(self, y, z, test=False, apply_f=False):
 		self.test = test
