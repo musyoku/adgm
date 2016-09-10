@@ -101,11 +101,11 @@ class SDGM(DGM):
 		self.optimizer_decoder_ayz_x.add_hook(GradientClipping(conf.gradient_clipping))
 
 		# p(a|x, y, z)
-		self.decoder_xyz_a = self.build_decoder_xyz_a()
-		self.optimizer_decoder_xyz_a = optimizers.Adam(alpha=conf.learning_rate, beta1=conf.gradient_momentum)
-		self.optimizer_decoder_xyz_a.setup(self.decoder_xyz_a)
-		# self.optimizer_decoder_xyz_a.add_hook(optimizer.WeightDecay(0.00001))
-		self.optimizer_decoder_xyz_a.add_hook(GradientClipping(conf.gradient_clipping))
+		self.decoder_yz_a = self.build_decoder_yz_a()
+		self.optimizer_decoder_yz_a = optimizers.Adam(alpha=conf.learning_rate, beta1=conf.gradient_momentum)
+		self.optimizer_decoder_yz_a.setup(self.decoder_yz_a)
+		# self.optimizer_decoder_yz_a.add_hook(optimizer.WeightDecay(0.00001))
+		self.optimizer_decoder_yz_a.add_hook(GradientClipping(conf.gradient_clipping))
 
 	def build_decoder_ayz_x(self):
 		conf = self.conf
@@ -144,22 +144,53 @@ class SDGM(DGM):
 
 		return decoder_ayz_x
 
+	def build_decoder_yz_a(self):
+		conf = self.conf
+		attributes = {}
+		units = zip(conf.decoder_yz_a_hidden_units[:-1], conf.decoder_yz_a_hidden_units[1:])
+		units += [(conf.decoder_yz_a_hidden_units[-1], conf.ndim_x)]
+		for i, (n_in, n_out) in enumerate(units):
+			attributes["layer_%i" % i] = L.Linear(n_in, n_out, initialW=np.random.normal(scale=conf.wscale, size=(n_out, n_in)))
+			if conf.batchnorm_before_activation:
+				attributes["batchnorm_%i" % i] = L.BatchNormalization(n_out)
+			else:
+				attributes["batchnorm_%i" % i] = L.BatchNormalization(n_in)
+		attributes["layer_merge_z"] = L.Linear(conf.ndim_z, conf.decoder_yz_a_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.decoder_yz_a_hidden_units[0], conf.ndim_z)))
+		attributes["layer_merge_y"] = L.Linear(conf.ndim_y, conf.decoder_yz_a_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.decoder_yz_a_hidden_units[0], conf.ndim_y)))
+		attributes["batchnorm_merge"] = L.BatchNormalization(conf.decoder_yz_a_hidden_units[0])
+
+		decoder_yz_a = GaussianDecoder_YZ_A(**attributes)
+		decoder_yz_a.n_layers = len(units)
+		decoder_yz_a.activation_function = conf.decoder_yz_a_activation_function
+		decoder_yz_a.apply_dropout = conf.decoder_yz_a_apply_dropout
+		decoder_yz_a.apply_batchnorm = conf.decoder_yz_a_apply_batchnorm
+		decoder_yz_a.apply_batchnorm_to_input = conf.decoder_yz_a_apply_batchnorm_to_input
+		decoder_yz_a.batchnorm_before_activation = conf.batchnorm_before_activation
+
+		if conf.gpu_enabled:
+			decoder_yz_a.to_gpu()
+
+		return decoder_yz_a
+
 	def zero_grads(self):
 		self.optimizer_encoder_axy_z.zero_grads()
 		self.optimizer_encoder_ax_y.zero_grads()
 		self.optimizer_encoder_x_a.zero_grads()
 		self.optimizer_decoder_ayz_x.zero_grads()
-		self.optimizer_decoder_xyz_a.zero_grads()
+		self.optimizer_decoder_yz_a.zero_grads()
 
 	def update(self):
 		self.optimizer_encoder_axy_z.update()
 		self.optimizer_encoder_ax_y.update()
 		self.optimizer_encoder_x_a.update()
 		self.optimizer_decoder_ayz_x.update()
-		self.optimizer_decoder_xyz_a.update()
+		self.optimizer_decoder_yz_a.update()
 
 	def decode_ayz_x(self, a, y, z, test=False, apply_f=True):
 		return self.decoder_ayz_x(a, y, z, test=test, apply_f=apply_f)
+
+	def decode_yz_a(self, y, z, test=False, apply_f=True):
+		return self.decoder_yz_a(y, z, test=test, apply_f=apply_f)
 
 	def log_px(self, a, x, y, z, test=False):
 		if isinstance(self.decoder_ayz_x, BernoulliDecoder_AYZ_X):
@@ -172,6 +203,33 @@ class SDGM(DGM):
 			negative_log_likelihood = self.gaussian_nll_keepbatch(x, x_mean, x_ln_var)
 			log_px_yz = -negative_log_likelihood
 		return log_px_yz
+
+	def log_pa(self, a, x, y, z, test=False):
+		a_mean, a_ln_var = self.decoder_yz_a(y, z, test=test, apply_f=False)
+		negative_log_likelihood = self.gaussian_nll_keepbatch(a, a_mean, a_ln_var)
+		log_px_yz = -negative_log_likelihood
+		return log_px_yz
+
+class GaussianDecoder_YZ_A(GaussianEncoder):
+
+	def merge_input(self, y, z):
+		f = activations[self.activation_function]
+		if self.apply_batchnorm_to_input:
+			if self.batchnorm_before_activation:
+				merged_input = f(self.batchnorm_merge(self.layer_merge_z(z) + self.layer_merge_y(y), test=self.test))
+			else:
+				merged_input = f(self.layer_merge_z(self.batchnorm_merge(z, test=self.test)) + self.layer_merge_y(y))
+		else:
+			merged_input = f(self.layer_merge_z(z) + self.layer_merge_y(y))
+
+		return merged_input
+
+	def __call__(self, y, z, test=False, apply_f=False):
+		self.test = test
+		mean, ln_var = self.forward_one_step(y, z)
+		if apply_f:
+			return F.gaussian(mean, ln_var)
+		return mean, ln_var
 
 class BernoulliDecoder_AYZ_X(MultiLayerPerceptron):
 

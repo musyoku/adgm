@@ -245,6 +245,11 @@ class DGM():
 	def encode_axy_z(self, a, x, y, test=False, apply_f=True):
 		return self.encoder_axy_z(a, x, y, test=test, apply_f=apply_f)
 
+	def encode_x_z(self, x, test=False, argmax=True):
+		a = self.encoder_x_a(x, test=test, apply_f=True)
+		y = self.sample_x_y(x, argmax=argmax, test=test)
+		return self.encoder_axy_z(a, x, y, test=test, apply_f=True)
+
 	def decode_xyz_a(self, x, y, z, test=False, apply_f=True):
 		return self.decoder_xyz_a(x, y, z, test=test, apply_f=apply_f)
 
