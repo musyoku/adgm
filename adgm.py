@@ -528,7 +528,7 @@ class DGM():
 				lower_bound_u = F.transpose(lower_bound_u)
 			else:
 				lower_bound_u = F.transpose(F.reshape(lower_bound_u, (n_types_of_label, -1)))
-
+				
 			# take expectations w.r.t 'y'
 			unlabeled_x_repeat = unlabeled_x
 			if n_mc_samples > 1:
