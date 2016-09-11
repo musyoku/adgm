@@ -400,7 +400,7 @@ class DGM():
 					print "loading",  filename
 					serializers.load_hdf5(filename, prop)
 				else:
-					print filename, "missing."
+					print filename, "not found."
 		print "model loaded."
 
 	def save(self, dir=None):
@@ -471,7 +471,7 @@ class DGM():
 			#   [x1[0], x1[1], ..., x1[n]]]         [0, 0, 1]]
 
 			# marginalize x and y
-			unlabeled_x_marg = xp.zeros((batchsize_u * n_types_of_label, unlabeled_x.data.shape[1]), dtype=xp.float32)
+			unlabeled_x_marg = xp.empty((batchsize_u * n_types_of_label, unlabeled_x.data.shape[1]), dtype=xp.float32)
 			y_marg = xp.repeat(xp.identity(n_types_of_label, dtype=xp.float32), batchsize_u, axis=0)
 			for n in xrange(n_types_of_label):
 				unlabeled_x_marg[n * batchsize_u:(n + 1) * batchsize_u] = unlabeled_x.data
@@ -479,14 +479,11 @@ class DGM():
 			# repeat n_mc_samples times
 			unlabeled_x_repeat = unlabeled_x_marg
 			y_repeat = y_marg
-			n_rows_marg = unlabeled_x_marg.shape[0]
 			if n_mc_samples > 1:
+				n_rows_marg = unlabeled_x_marg.shape[0]
 				n_rows = n_rows_marg * n_mc_samples
-				unlabeled_x_repeat = xp.zeros((n_rows, unlabeled_x_marg.shape[1]), dtype=xp.float32)
-				y_repeat = xp.zeros((n_rows, n_types_of_label), dtype=xp.float32)
-				for n in xrange(n_mc_samples):
-					unlabeled_x_repeat[n * n_rows_marg:(n + 1) * n_rows_marg] = unlabeled_x_marg
-					y_repeat[n * n_rows_marg:(n + 1) * n_rows_marg] = y_marg
+				unlabeled_x_repeat = xp.repeat(unlabeled_x_marg, n_mc_samples, axis=0)
+				y_repeat = xp.repeat(y_marg, n_mc_samples, axis=0)
 			unlabeled_x_repeat = Variable(unlabeled_x_repeat)
 			y_repeat = Variable(y_repeat)
 
@@ -527,19 +524,15 @@ class DGM():
 			#                   .
 			#  [LB(x_bs,0), LB(x_bs,1), ..., LB(x_bs,9)]]
 			if n_mc_samples > 1:
-				lower_bound_u = F.reshape(lower_bound_u, (n_mc_samples, n_types_of_label, -1))
-				lower_bound_u = F.transpose(lower_bound_u, (0, 2, 1))
-				lower_bound_u = F.reshape(lower_bound_u, (n_mc_samples * batchsize_u, -1))
+				lower_bound_u = F.reshape(lower_bound_u, (n_types_of_label, n_mc_samples * batchsize_u))
+				lower_bound_u = F.transpose(lower_bound_u)
 			else:
 				lower_bound_u = F.transpose(F.reshape(lower_bound_u, (n_types_of_label, -1)))
 
 			# take expectations w.r.t 'y'
 			unlabeled_x_repeat = unlabeled_x
 			if n_mc_samples > 1:
-				unlabeled_x_repeat = xp.zeros((batchsize_u * n_mc_samples, unlabeled_x.data.shape[1]), dtype=xp.float32)
-				for n in xrange(n_mc_samples):
-					unlabeled_x_repeat[n * batchsize_u:(n + 1) * batchsize_u] = unlabeled_x.data
-				unlabeled_x_repeat = Variable(unlabeled_x_repeat)
+				unlabeled_x_repeat = Variable(xp.repeat(unlabeled_x.data, n_mc_samples, axis=0))
 
 			a_u = self.encoder_x_a(unlabeled_x_repeat, test=test, apply_f=True)
 			y_distribution = self.encoder_ax_y(a_u, unlabeled_x_repeat, test=test, softmax=True)
