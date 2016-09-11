@@ -231,7 +231,7 @@ class DGM():
 		return self.encoder_axy_z.xp
 
 	@property
-	def gpu_enabled(self):
+	def gpu(self):
 		if cuda.available is False:
 			return False
 		return True if self.xp is cuda.cupy else False
@@ -261,7 +261,7 @@ class DGM():
 		batchsize = x.data.shape[0]
 		y_distribution = self.encoder_ax_y(a, x, test=test, softmax=True).data
 		n_labels = y_distribution.shape[1]
-		if self.gpu_enabled:
+		if self.gpu:
 			y_distribution = cuda.to_cpu(y_distribution)
 		sampled_y = np.zeros((batchsize, n_labels), dtype=np.float32)
 		if argmax:
@@ -273,7 +273,7 @@ class DGM():
 				label_id = np.random.choice(np.arange(n_labels), p=y_distribution[b])
 				sampled_y[b, label_id] = 1
 		sampled_y = Variable(sampled_y)
-		if self.gpu_enabled:
+		if self.gpu:
 			sampled_y.to_gpu()
 		return sampled_y
 
@@ -286,7 +286,7 @@ class DGM():
 		a = self.encoder_x_a(x, test=test, apply_f=True)
 		y_distribution = self.encoder_ax_y(a, x, test=test, softmax=True).data
 		n_labels = y_distribution.shape[1]
-		if self.gpu_enabled:
+		if self.gpu:
 			y_distribution = cuda.to_cpu(y_distribution)
 		if argmax:
 			sampled_label = np.argmax(y_distribution, axis=1)
@@ -342,7 +342,7 @@ class DGM():
 		loss.backward()
 		self.update()
 
-		if self.gpu_enabled:
+		if self.gpu:
 			loss_labeled.to_cpu()
 			if loss_unlabeled is not None:
 				loss_unlabeled.to_cpu()
@@ -357,7 +357,7 @@ class DGM():
 		self.zero_grads()
 		loss.backward()
 		self.update_classifier()
-		if self.gpu_enabled:
+		if self.gpu:
 			loss.to_cpu()
 		return loss.data
 
@@ -369,7 +369,7 @@ class DGM():
 		self.zero_grads()
 		loss.backward()
 		self.update()
-		if self.gpu_enabled:
+		if self.gpu:
 			loss_lb_labled.to_cpu()
 			if loss_lb_unlabled is not None:
 				loss_lb_unlabled.to_cpu()
@@ -430,28 +430,14 @@ class DGM():
 		n_mc_samples = self.conf.n_mc_samples
 		xp = self.xp
 
-		# to speed up
-		unlabeled_x_data_cpu = unlabeled_x.data
-		if self.gpu_enabled:
-			unlabeled_x_data_cpu = cuda.to_cpu(unlabeled_x.data)
-		if n_mc_samples > 1:
-			labeled_x_data_cpu = labeled_x.data
-			labeled_y_data_cpu = labeled_y.data
-			if self.gpu_enabled:
-				labeled_x_data_cpu = cuda.to_cpu(labeled_x.data)
-				labeled_y_data_cpu = cuda.to_cpu(labeled_y.data)
-
 		### Lower bound for labeled data ###
 		labeled_x_repeat = labeled_x
 		labeled_y_repeat = labeled_y
 
 		# repeat n_mc_samples times
 		if n_mc_samples > 1:
-			labeled_x_repeat = Variable(np.repeat(labeled_x_data_cpu, n_mc_samples, axis=0))
-			labeled_y_repeat = Variable(np.repeat(labeled_y_data_cpu, n_mc_samples, axis=0))
-			if self.gpu_enabled:
-				labeled_x_repeat.to_gpu()
-				labeled_y_repeat.to_gpu()
+			labeled_x_repeat = Variable(xp.repeat(labeled_x.data, n_mc_samples, axis=0))
+			labeled_y_repeat = Variable(xp.repeat(labeled_y.data, n_mc_samples, axis=0))
 
 
 		a_mean_l, a_ln_var_l = self.encoder_x_a(labeled_x_repeat, test=test, apply_f=False)
@@ -485,10 +471,10 @@ class DGM():
 			#   [x1[0], x1[1], ..., x1[n]]]         [0, 0, 1]]
 
 			# marginalize x and y
-			unlabeled_x_marg = np.empty((batchsize_u * n_types_of_label, unlabeled_x.data.shape[1]), dtype=np.float32)
-			y_marg = np.repeat(np.identity(n_types_of_label, dtype=np.float32), batchsize_u, axis=0)
+			unlabeled_x_marg = xp.empty((batchsize_u * n_types_of_label, unlabeled_x.data.shape[1]), dtype=xp.float32)
+			y_marg = xp.repeat(xp.identity(n_types_of_label, dtype=xp.float32), batchsize_u, axis=0)
 			for n in xrange(n_types_of_label):
-				unlabeled_x_marg[n * batchsize_u:(n + 1) * batchsize_u] = unlabeled_x_data_cpu
+				unlabeled_x_marg[n * batchsize_u:(n + 1) * batchsize_u] = unlabeled_x.data
 
 			# repeat n_mc_samples times
 			unlabeled_x_repeat = unlabeled_x_marg
@@ -496,13 +482,10 @@ class DGM():
 			if n_mc_samples > 1:
 				n_rows_marg = unlabeled_x_marg.shape[0]
 				n_rows = n_rows_marg * n_mc_samples
-				unlabeled_x_repeat = np.repeat(unlabeled_x_marg, n_mc_samples, axis=0)
-				y_repeat = np.repeat(y_marg, n_mc_samples, axis=0)
+				unlabeled_x_repeat = xp.repeat(unlabeled_x_marg, n_mc_samples, axis=0)
+				y_repeat = xp.repeat(y_marg, n_mc_samples, axis=0)
 			unlabeled_x_repeat = Variable(unlabeled_x_repeat)
 			y_repeat = Variable(y_repeat)
-			if self.gpu_enabled:
-				unlabeled_x_repeat.to_gpu()
-				y_repeat.to_gpu()
 
 			a_mean_u, a_ln_var_u = self.encoder_x_a(unlabeled_x_repeat, test=test, apply_f=False)
 			a_u = F.gaussian(a_mean_u, a_ln_var_u)
@@ -545,13 +528,11 @@ class DGM():
 				lower_bound_u = F.transpose(lower_bound_u)
 			else:
 				lower_bound_u = F.transpose(F.reshape(lower_bound_u, (n_types_of_label, -1)))
-
+				
 			# take expectations w.r.t 'y'
 			unlabeled_x_repeat = unlabeled_x
 			if n_mc_samples > 1:
-				unlabeled_x_repeat = Variable(np.repeat(unlabeled_x_data_cpu, n_mc_samples, axis=0))
-				if self.gpu_enabled:
-					unlabeled_x_repeat.to_gpu()
+				unlabeled_x_repeat = Variable(xp.repeat(unlabeled_x.data, n_mc_samples, axis=0))
 
 			a_u = self.encoder_x_a(unlabeled_x_repeat, test=test, apply_f=True)
 			y_distribution = self.encoder_ax_y(a_u, unlabeled_x_repeat, test=test, softmax=True)
