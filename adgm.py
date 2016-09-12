@@ -106,15 +106,15 @@ class DGM():
 		attributes = {}
 		units = zip(conf.encoder_xy_z_hidden_units[:-1], conf.encoder_xy_z_hidden_units[1:])
 		for i, (n_in, n_out) in enumerate(units):
-			attributes["layer_%i" % i] = L.Linear(n_in, n_out, initialW=np.random.normal(scale=conf.wscale, size=(n_out, n_in)))
+			attributes["layer_%i" % i] = L.Linear(n_in, n_out, wscale=conf.wscale)
 			if conf.batchnorm_before_activation:
 				attributes["batchnorm_%i" % i] = L.BatchNormalization(n_out)
 			else:
 				attributes["batchnorm_%i" % i] = L.BatchNormalization(n_in)
 
-		attributes["layer_merge_a"] = L.Linear(conf.ndim_a, conf.encoder_xy_z_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.encoder_xy_z_hidden_units[0], conf.ndim_a)))
-		attributes["layer_merge_x"] = L.Linear(conf.ndim_x, conf.encoder_xy_z_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.encoder_xy_z_hidden_units[0], conf.ndim_x)))
-		attributes["layer_merge_y"] = L.Linear(conf.ndim_y, conf.encoder_xy_z_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.encoder_xy_z_hidden_units[0], conf.ndim_y)))
+		attributes["layer_merge_a"] = L.Linear(conf.ndim_a, conf.encoder_xy_z_hidden_units[0], wscale=conf.wscale)
+		attributes["layer_merge_x"] = L.Linear(conf.ndim_x, conf.encoder_xy_z_hidden_units[0], wscale=conf.wscale)
+		attributes["layer_merge_y"] = L.Linear(conf.ndim_y, conf.encoder_xy_z_hidden_units[0], wscale=conf.wscale)
 
 		if conf.batchnorm_before_activation:
 			attributes["batchnorm_merge"] = L.BatchNormalization(conf.encoder_xy_z_hidden_units[0])
@@ -122,8 +122,8 @@ class DGM():
 			attributes["batchnorm_merge_x"] = L.BatchNormalization(conf.ndim_x)
 			attributes["batchnorm_merge_a"] = L.BatchNormalization(conf.ndim_a)
 
-		attributes["layer_output_mean"] = L.Linear(conf.encoder_xy_z_hidden_units[-1], conf.ndim_z, initialW=np.random.normal(scale=conf.wscale, size=(conf.ndim_z, conf.encoder_xy_z_hidden_units[-1])))
-		attributes["layer_output_var"] = L.Linear(conf.encoder_xy_z_hidden_units[-1], conf.ndim_z, initialW=np.random.normal(scale=conf.wscale, size=(conf.ndim_z, conf.encoder_xy_z_hidden_units[-1])))
+		attributes["layer_output_mean"] = L.Linear(conf.encoder_xy_z_hidden_units[-1], conf.ndim_z, wscale=conf.wscale)
+		attributes["layer_output_var"] = L.Linear(conf.encoder_xy_z_hidden_units[-1], conf.ndim_z, wscale=conf.wscale)
 		encoder_axy_z = GaussianEncoder_AXY_Z(**attributes)
 		encoder_axy_z.n_layers = len(units)
 		encoder_axy_z.activation_function = conf.encoder_xy_z_activation_function
@@ -143,13 +143,13 @@ class DGM():
 		units = zip(conf.encoder_ax_y_hidden_units[:-1], conf.encoder_ax_y_hidden_units[1:])
 		units += [(conf.encoder_ax_y_hidden_units[-1], conf.ndim_y)]
 		for i, (n_in, n_out) in enumerate(units):
-			attributes["layer_%i" % i] = L.Linear(n_in, n_out, initialW=np.random.normal(scale=conf.wscale, size=(n_out, n_in)))
+			attributes["layer_%i" % i] = L.Linear(n_in, n_out, wscale=conf.wscale)
 			if conf.batchnorm_before_activation:
 				attributes["batchnorm_%i" % i] = L.BatchNormalization(n_out)
 			else:
 				attributes["batchnorm_%i" % i] = L.BatchNormalization(n_in)
-		attributes["layer_merge_x"] = L.Linear(conf.ndim_x, conf.encoder_ax_y_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.encoder_ax_y_hidden_units[0], conf.ndim_x)))
-		attributes["layer_merge_a"] = L.Linear(conf.ndim_a, conf.encoder_ax_y_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.encoder_ax_y_hidden_units[0], conf.ndim_a)))
+		attributes["layer_merge_x"] = L.Linear(conf.ndim_x, conf.encoder_ax_y_hidden_units[0], wscale=conf.wscale)
+		attributes["layer_merge_a"] = L.Linear(conf.ndim_a, conf.encoder_ax_y_hidden_units[0], wscale=conf.wscale)
 		attributes["batchnorm_merge"] = L.BatchNormalization(conf.encoder_ax_y_hidden_units[0])
 		encoder_ax_y = SoftmaxEncoder_AX_Y(**attributes)
 		encoder_ax_y.n_layers = len(units)
@@ -170,13 +170,13 @@ class DGM():
 		units = [(conf.ndim_x, conf.encoder_x_a_hidden_units[0])]
 		units += zip(conf.encoder_x_a_hidden_units[:-1], conf.encoder_x_a_hidden_units[1:])
 		for i, (n_in, n_out) in enumerate(units):
-			attributes["layer_%i" % i] = L.Linear(n_in, n_out, initialW=np.random.normal(scale=conf.wscale, size=(n_out, n_in)))
+			attributes["layer_%i" % i] = L.Linear(n_in, n_out, wscale=conf.wscale)
 			if conf.batchnorm_before_activation:
 				attributes["batchnorm_%i" % i] = L.BatchNormalization(n_out)
 			else:
 				attributes["batchnorm_%i" % i] = L.BatchNormalization(n_in)
-		attributes["layer_output_mean"] = L.Linear(conf.encoder_x_a_hidden_units[-1], conf.ndim_a, initialW=np.random.normal(scale=conf.wscale, size=(conf.ndim_a, conf.encoder_x_a_hidden_units[-1])))
-		attributes["layer_output_var"] = L.Linear(conf.encoder_x_a_hidden_units[-1], conf.ndim_a, initialW=np.random.normal(scale=conf.wscale, size=(conf.ndim_a, conf.encoder_x_a_hidden_units[-1])))
+		attributes["layer_output_mean"] = L.Linear(conf.encoder_x_a_hidden_units[-1], conf.ndim_a, wscale=conf.wscale)
+		attributes["layer_output_var"] = L.Linear(conf.encoder_x_a_hidden_units[-1], conf.ndim_a, wscale=conf.wscale)
 		encoder_x_a = GaussianEncoder_X_A(**attributes)
 		encoder_x_a.n_layers = len(units)
 		encoder_x_a.activation_function = conf.encoder_x_a_activation_function
@@ -195,15 +195,15 @@ class DGM():
 		attributes = {}
 		units = zip(conf.decoder_xyz_a_hidden_units[:-1], conf.decoder_xyz_a_hidden_units[1:])
 		for i, (n_in, n_out) in enumerate(units):
-			attributes["layer_%i" % i] = L.Linear(n_in, n_out, initialW=np.random.normal(scale=conf.wscale, size=(n_out, n_in)))
+			attributes["layer_%i" % i] = L.Linear(n_in, n_out, wscale=conf.wscale)
 			if conf.batchnorm_before_activation:
 				attributes["batchnorm_%i" % i] = L.BatchNormalization(n_out)
 			else:
 				attributes["batchnorm_%i" % i] = L.BatchNormalization(n_in)
 
-		attributes["layer_merge_x"] = L.Linear(conf.ndim_x, conf.decoder_xyz_a_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.decoder_xyz_a_hidden_units[0], conf.ndim_x)))
-		attributes["layer_merge_y"] = L.Linear(conf.ndim_y, conf.decoder_xyz_a_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.decoder_xyz_a_hidden_units[0], conf.ndim_y)))
-		attributes["layer_merge_z"] = L.Linear(conf.ndim_z, conf.decoder_xyz_a_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.decoder_xyz_a_hidden_units[0], conf.ndim_z)))
+		attributes["layer_merge_x"] = L.Linear(conf.ndim_x, conf.decoder_xyz_a_hidden_units[0], wscale=conf.wscale)
+		attributes["layer_merge_y"] = L.Linear(conf.ndim_y, conf.decoder_xyz_a_hidden_units[0], wscale=conf.wscale)
+		attributes["layer_merge_z"] = L.Linear(conf.ndim_z, conf.decoder_xyz_a_hidden_units[0], wscale=conf.wscale)
 
 		if conf.batchnorm_before_activation:
 			attributes["batchnorm_merge"] = L.BatchNormalization(conf.decoder_xyz_a_hidden_units[0])
@@ -211,8 +211,8 @@ class DGM():
 			attributes["batchnorm_merge_x"] = L.BatchNormalization(conf.ndim_x)
 			attributes["batchnorm_merge_z"] = L.BatchNormalization(conf.ndim_z)
 
-		attributes["layer_output_mean"] = L.Linear(conf.decoder_xyz_a_hidden_units[-1], conf.ndim_a, initialW=np.random.normal(scale=conf.wscale, size=(conf.ndim_a, conf.decoder_xyz_a_hidden_units[-1])))
-		attributes["layer_output_var"] = L.Linear(conf.decoder_xyz_a_hidden_units[-1], conf.ndim_a, initialW=np.random.normal(scale=conf.wscale, size=(conf.ndim_a, conf.decoder_xyz_a_hidden_units[-1])))
+		attributes["layer_output_mean"] = L.Linear(conf.decoder_xyz_a_hidden_units[-1], conf.ndim_a, wscale=conf.wscale)
+		attributes["layer_output_var"] = L.Linear(conf.decoder_xyz_a_hidden_units[-1], conf.ndim_a, wscale=conf.wscale)
 		decoder_xyz_a = GaussianDecoder_XYZ_A(**attributes)
 		decoder_xyz_a.n_layers = len(units)
 		decoder_xyz_a.activation_function = conf.decoder_xyz_a_activation_function
@@ -601,20 +601,20 @@ class ADGM(DGM):
 		units = zip(conf.decoder_yz_x_hidden_units[:-1], conf.decoder_yz_x_hidden_units[1:])
 		units += [(conf.decoder_yz_x_hidden_units[-1], conf.ndim_x)]
 		for i, (n_in, n_out) in enumerate(units):
-			attributes["layer_%i" % i] = L.Linear(n_in, n_out, initialW=np.random.normal(scale=conf.wscale, size=(n_out, n_in)))
+			attributes["layer_%i" % i] = L.Linear(n_in, n_out, wscale=conf.wscale)
 			if conf.batchnorm_before_activation:
 				attributes["batchnorm_%i" % i] = L.BatchNormalization(n_out)
 			else:
 				attributes["batchnorm_%i" % i] = L.BatchNormalization(n_in)
-		attributes["layer_merge_z"] = L.Linear(conf.ndim_z, conf.decoder_yz_x_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.decoder_yz_x_hidden_units[0], conf.ndim_z)))
-		attributes["layer_merge_y"] = L.Linear(conf.ndim_y, conf.decoder_yz_x_hidden_units[0], initialW=np.random.normal(scale=conf.wscale, size=(conf.decoder_yz_x_hidden_units[0], conf.ndim_y)))
+		attributes["layer_merge_z"] = L.Linear(conf.ndim_z, conf.decoder_yz_x_hidden_units[0], wscale=conf.wscale)
+		attributes["layer_merge_y"] = L.Linear(conf.ndim_y, conf.decoder_yz_x_hidden_units[0], wscale=conf.wscale)
 		attributes["batchnorm_merge"] = L.BatchNormalization(conf.decoder_yz_x_hidden_units[0])
 
 		if conf.distribution_x == "bernoulli":
 			decoder_yz_x = BernoulliDecoder_YZ_X(**attributes)
 		else:
-			attributes["layer_output_mean"] = L.Linear(conf.decoder_yz_x_hidden_units[-1], conf.ndim_x, initialW=np.random.normal(scale=conf.wscale, size=(conf.ndim_x, conf.decoder_yz_x_hidden_units[-1])))
-			attributes["layer_output_var"] = L.Linear(conf.decoder_yz_x_hidden_units[-1], conf.ndim_x, initialW=np.random.normal(scale=conf.wscale, size=(conf.ndim_x, conf.decoder_yz_x_hidden_units[-1])))
+			attributes["layer_output_mean"] = L.Linear(conf.decoder_yz_x_hidden_units[-1], conf.ndim_x, wscale=conf.wscale)
+			attributes["layer_output_var"] = L.Linear(conf.decoder_yz_x_hidden_units[-1], conf.ndim_x, wscale=conf.wscale)
 			decoder_yz_x = GaussianDecoder_YZ_X(**attributes)
 		decoder_yz_x.n_layers = len(units)
 		decoder_yz_x.activation_function = conf.decoder_yz_x_activation_function
