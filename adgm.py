@@ -231,7 +231,7 @@ class DGM():
 		return self.encoder_axy_z.xp
 
 	@property
-	def gpu(self):
+	def gpu_enabled(self):
 		if cuda.available is False:
 			return False
 		return True if self.xp is cuda.cupy else False
@@ -261,7 +261,7 @@ class DGM():
 		batchsize = x.data.shape[0]
 		y_distribution = self.encoder_ax_y(a, x, test=test, softmax=True).data
 		n_labels = y_distribution.shape[1]
-		if self.gpu:
+		if self.gpu_enabled:
 			y_distribution = cuda.to_cpu(y_distribution)
 		sampled_y = np.zeros((batchsize, n_labels), dtype=np.float32)
 		if argmax:
@@ -273,7 +273,7 @@ class DGM():
 				label_id = np.random.choice(np.arange(n_labels), p=y_distribution[b])
 				sampled_y[b, label_id] = 1
 		sampled_y = Variable(sampled_y)
-		if self.gpu:
+		if self.gpu_enabled:
 			sampled_y.to_gpu()
 		return sampled_y
 
@@ -286,7 +286,7 @@ class DGM():
 		a = self.encoder_x_a(x, test=test, apply_f=True)
 		y_distribution = self.encoder_ax_y(a, x, test=test, softmax=True).data
 		n_labels = y_distribution.shape[1]
-		if self.gpu:
+		if self.gpu_enabled:
 			y_distribution = cuda.to_cpu(y_distribution)
 		if argmax:
 			sampled_label = np.argmax(y_distribution, axis=1)
@@ -342,7 +342,7 @@ class DGM():
 		loss.backward()
 		self.update()
 
-		if self.gpu:
+		if self.gpu_enabled:
 			loss_labeled.to_cpu()
 			if loss_unlabeled is not None:
 				loss_unlabeled.to_cpu()
@@ -357,7 +357,7 @@ class DGM():
 		self.zero_grads()
 		loss.backward()
 		self.update_classifier()
-		if self.gpu:
+		if self.gpu_enabled:
 			loss.to_cpu()
 		return loss.data
 
@@ -369,7 +369,7 @@ class DGM():
 		self.zero_grads()
 		loss.backward()
 		self.update()
-		if self.gpu:
+		if self.gpu_enabled:
 			loss_lb_labled.to_cpu()
 			if loss_lb_unlabled is not None:
 				loss_lb_unlabled.to_cpu()
