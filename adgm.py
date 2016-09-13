@@ -335,8 +335,8 @@ class DGM():
 		log_pz = -0.5 * math.log(2.0 * math.pi) - 0.5 * z ** 2
 		return F.sum(log_pz, axis=1)
 
-	def train(self, labeled_x, labeled_y, label_ids, unlabeled_x):
-		loss, loss_labeled, loss_unlabeled = self.compute_lower_bound_loss(labeled_x, labeled_y, label_ids, unlabeled_x, test=False)
+	def train(self, labeled_x_cpu_data, labeled_y_cpu_data, unlabeled_x_cpu_data):
+		loss, loss_labeled, loss_unlabeled = self.compute_lower_bound_loss(labeled_x_cpu_data, labeled_y_cpu_data, unlabeled_x_cpu_data, test=False)
 
 		self.zero_grads()
 		loss.backward()
@@ -352,23 +352,33 @@ class DGM():
 
 		return loss_labeled.data, loss_unlabeled.data
 
-	def train_classification(self, labeled_x, label_ids, alpha=1.0):
-		loss = alpha * self.compute_classification_loss(labeled_x, label_ids, test=False)
+	def train_classification(self, labeled_x_cpu_data, label_ids_cpu_data, alpha=1.0):
+		assert(isinstance(labeled_x_cpu_data, np.ndarray))
+		assert(isinstance(label_ids_cpu_data, np.ndarray))
+
+		loss = alpha * self.compute_classification_loss(labeled_x_cpu_data, label_ids_cpu_data, test=False)
+
 		self.zero_grads()
 		loss.backward()
 		self.update_classifier()
+
 		if self.gpu_enabled:
 			loss.to_cpu()
 		return loss.data
 
-	def train_jointly(self, labeled_x, labeled_y, label_ids, unlabeled_x, alpha=1.0):
-		loss_lower_bound, loss_lb_labled, loss_lb_unlabled = self.compute_lower_bound_loss(labeled_x, labeled_y, label_ids, unlabeled_x, test=False)
+	def train_jointly(self, labeled_x_cpu_data, labeled_y_cpu_data, label_ids_cpu_data, unlabeled_x_cpu_data, alpha=1.0):
+		assert(isinstance(labeled_x_cpu_data, np.ndarray))
+		assert(isinstance(labeled_y_cpu_data, np.ndarray))
+		assert(isinstance(label_ids_cpu_data, np.ndarray))
 
-		loss_classification = alpha * self.compute_classification_loss(labeled_x, label_ids, test=False)
+		loss_lower_bound, loss_lb_labled, loss_lb_unlabled = self.compute_lower_bound_loss(labeled_x_cpu_data, labeled_y_cpu_data, label_ids_cpu_data, unlabeled_x_cpu_data, test=False)
+		loss_classification = alpha * self.compute_classification_loss(labeled_x_cpu_data, label_ids_cpu_data, test=False)
 		loss = loss_lower_bound + loss_classification
+
 		self.zero_grads()
 		loss.backward()
 		self.update()
+
 		if self.gpu_enabled:
 			loss_lb_labled.to_cpu()
 			if loss_lb_unlabled is not None:
@@ -380,10 +390,17 @@ class DGM():
 
 		return loss_lb_labled.data, loss_lb_unlabled.data, loss_classification.data
 
-	def compute_classification_loss(self, labeled_x, label_ids, test=False):
+	def compute_classification_loss(self, labeled_x_cpu_data, label_ids_cpu_data, test=False):
+		assert(isinstance(labeled_x_cpu_data, np.ndarray))
+		assert(isinstance(label_ids_cpu_data, np.ndarray))
+		label_ids = Variable(label_ids_cpu_data)
+		labeled_x = Variable(labeled_x_cpu_data)
+		if self.gpu_enabled:
+			label_ids.to_gpu()
+			labeled_x.to_gpu()
 		a = self.encoder_x_a(labeled_x, test=test, apply_f=True)
 		y_distribution = self.encoder_ax_y(a, labeled_x, softmax=False, test=test)
-		batchsize = labeled_x.data.shape[0]
+		batchsize = labeled_x_cpu_data.shape[0]
 		n_types_of_label = y_distribution.data.shape[1]
 
 		loss = F.softmax_cross_entropy(y_distribution, label_ids)
@@ -416,17 +433,21 @@ class DGM():
 				serializers.save_hdf5(dir + "/%s_%s.hdf5" % (self.name, attr), prop)
 		print "model saved."
 
-
-	def compute_lower_bound_loss(self, labeled_x, labeled_y, label_ids, unlabeled_x, test=False):
+	def compute_lower_bound_loss(self, labeled_x_cpu_data, labeled_y_cpu_data, unlabeled_x_cpu_data, test=False):
+		assert(isinstance(labeled_x_cpu_data, np.ndarray))
 
 		def lower_bound(log_px, log_py, log_pa, log_pz, log_qz, log_qa):
 			return log_px + log_py + log_pa + log_pz - log_qz - log_qa
 
+		labeled_x = Variable(labeled_x_cpu_data)
+		labeled_y = Variable(labeled_y_cpu_data)
+		unlabeled_x = Variable(unlabeled_x_cpu_data)
+
 		# _l: labeled
 		# _u: unlabeled
-		batchsize_l = labeled_x.data.shape[0]
-		batchsize_u = unlabeled_x.data.shape[0]
-		n_types_of_label = labeled_y.data.shape[1]
+		batchsize_l = labeled_x_cpu_data.shape[0]
+		batchsize_u = unlabeled_x_cpu_data.shape[0]
+		n_types_of_label = labeled_y_cpu_data.shape[1]
 		n_mc_samples = self.conf.n_mc_samples
 		xp = self.xp
 
@@ -436,8 +457,12 @@ class DGM():
 
 		# repeat n_mc_samples times
 		if n_mc_samples > 1:
-			labeled_x_repeat = Variable(xp.repeat(labeled_x.data, n_mc_samples, axis=0))
-			labeled_y_repeat = Variable(xp.repeat(labeled_y.data, n_mc_samples, axis=0))
+			labeled_x_repeat = Variable(np.repeat(labeled_x_cpu_data, n_mc_samples, axis=0))
+			labeled_y_repeat = Variable(np.repeat(labeled_y_cpu_data, n_mc_samples, axis=0))
+
+		if self.gpu_enabled:
+			labeled_x_repeat.to_gpu()
+			labeled_y_repeat.to_gpu()
 
 
 		a_mean_l, a_ln_var_l = self.encoder_x_a(labeled_x_repeat, test=test, apply_f=False)
@@ -471,10 +496,10 @@ class DGM():
 			#   [x1[0], x1[1], ..., x1[n]]]         [0, 0, 1]]
 
 			# marginalize x and y
-			unlabeled_x_marg = xp.empty((batchsize_u * n_types_of_label, unlabeled_x.data.shape[1]), dtype=xp.float32)
-			y_marg = xp.repeat(xp.identity(n_types_of_label, dtype=xp.float32), batchsize_u, axis=0)
+			unlabeled_x_marg = np.empty((batchsize_u * n_types_of_label, unlabeled_x_cpu_data.shape[1]), dtype=np.float32)
+			y_marg = np.repeat(np.identity(n_types_of_label, dtype=np.float32), batchsize_u, axis=0)
 			for n in xrange(n_types_of_label):
-				unlabeled_x_marg[n * batchsize_u:(n + 1) * batchsize_u] = unlabeled_x.data
+				unlabeled_x_marg[n * batchsize_u:(n + 1) * batchsize_u] = unlabeled_x_cpu_data
 
 			# repeat n_mc_samples times
 			unlabeled_x_repeat = unlabeled_x_marg
@@ -482,10 +507,13 @@ class DGM():
 			if n_mc_samples > 1:
 				n_rows_marg = unlabeled_x_marg.shape[0]
 				n_rows = n_rows_marg * n_mc_samples
-				unlabeled_x_repeat = xp.repeat(unlabeled_x_marg, n_mc_samples, axis=0)
-				y_repeat = xp.repeat(y_marg, n_mc_samples, axis=0)
+				unlabeled_x_repeat = np.repeat(unlabeled_x_marg, n_mc_samples, axis=0)
+				y_repeat = np.repeat(y_marg, n_mc_samples, axis=0)
 			unlabeled_x_repeat = Variable(unlabeled_x_repeat)
 			y_repeat = Variable(y_repeat)
+			if self.gpu_enabled:
+				unlabeled_x_repeat.to_gpu()
+				y_repeat.to_gpu()
 
 			a_mean_u, a_ln_var_u = self.encoder_x_a(unlabeled_x_repeat, test=test, apply_f=False)
 			a_u = F.gaussian(a_mean_u, a_ln_var_u)
@@ -528,11 +556,14 @@ class DGM():
 				lower_bound_u = F.transpose(lower_bound_u)
 			else:
 				lower_bound_u = F.transpose(F.reshape(lower_bound_u, (n_types_of_label, -1)))
-				
+
 			# take expectations w.r.t 'y'
 			unlabeled_x_repeat = unlabeled_x
 			if n_mc_samples > 1:
-				unlabeled_x_repeat = Variable(xp.repeat(unlabeled_x.data, n_mc_samples, axis=0))
+				unlabeled_x_repeat = Variable(np.repeat(unlabeled_x_cpu_data, n_mc_samples, axis=0))
+
+			if self.gpu_enabled:
+				unlabeled_x_repeat.to_gpu()
 
 			a_u = self.encoder_x_a(unlabeled_x_repeat, test=test, apply_f=True)
 			y_distribution = self.encoder_ax_y(a_u, unlabeled_x_repeat, test=test, softmax=True)

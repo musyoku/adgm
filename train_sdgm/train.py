@@ -18,11 +18,6 @@ def sample_labeled_data():
 	y_labeled = Variable(y_labeled)
 	label_ids = Variable(label_ids)
 
-	if conf.gpu_enabled:
-		x_labeled.to_gpu()
-		y_labeled.to_gpu()
-		label_ids.to_gpu()
-
 	return x_labeled, y_labeled, label_ids
 
 def sample_validation_data():
@@ -34,9 +29,6 @@ def sample_validation_data():
 	x_labeled = Variable(x_labeled)
 	label_ids = Variable(label_ids)
 
-	if conf.gpu_enabled:
-		x_labeled.to_gpu()
-
 	return x_labeled, label_ids
 
 def sample_unlabeled_data():
@@ -46,8 +38,6 @@ def sample_unlabeled_data():
 	x_unlabeled = util.binarize_data(x_unlabeled)
 
 	x_unlabeled = Variable(x_unlabeled)
-	if conf.gpu_enabled:
-		x_unlabeled.to_gpu()
 
 	return x_unlabeled
 

@@ -14,15 +14,6 @@ def sample_labeled_data():
 	# binalize
 	x_labeled = util.binarize_data(x_labeled)
 
-	x_labeled = Variable(x_labeled)
-	y_labeled = Variable(y_labeled)
-	label_ids = Variable(label_ids)
-
-	if conf.gpu_enabled:
-		x_labeled.to_gpu()
-		y_labeled.to_gpu()
-		label_ids.to_gpu()
-
 	return x_labeled, y_labeled, label_ids
 
 def sample_validation_data():
@@ -31,12 +22,6 @@ def sample_validation_data():
 	# binalize
 	x_labeled = util.binarize_data(x_labeled)
 
-	x_labeled = Variable(x_labeled)
-	label_ids = Variable(label_ids)
-
-	if conf.gpu_enabled:
-		x_labeled.to_gpu()
-
 	return x_labeled, label_ids
 
 def sample_unlabeled_data():
@@ -44,10 +29,6 @@ def sample_unlabeled_data():
 
 	# binalize
 	x_unlabeled = util.binarize_data(x_unlabeled)
-
-	x_unlabeled = Variable(x_unlabeled)
-	if conf.gpu_enabled:
-		x_unlabeled.to_gpu()
 
 	return x_unlabeled
 
@@ -100,7 +81,7 @@ for epoch in xrange(max_epoch):
 		x_unlabeled = sample_unlabeled_data()
 
 		# train
-		loss_labeled, loss_unlabeled = adgm.train(x_labeled, y_labeled, label_ids, x_unlabeled)
+		loss_labeled, loss_unlabeled = adgm.train(x_labeled, y_labeled, x_unlabeled)
 		loss_classifier = adgm.train_classification(x_labeled, label_ids, alpha=alpha)
 
 		sum_loss_labeled += loss_labeled
@@ -119,10 +100,13 @@ for epoch in xrange(max_epoch):
 
 	# validation
 	x_labeled, label_ids = sample_validation_data()
+	x_labeled = Variable(x_labeled)
+	if conf.gpu_enabled:
+		x_labeled.to_gpu()
 	predicted_ids = adgm.sample_x_label(x_labeled, test=True, argmax=True)
 	correct = 0
 	for i in xrange(n_validation_data):
-		if predicted_ids[i] == label_ids.data[i]:
+		if predicted_ids[i] == label_ids[i]:
 			correct += 1
 	print "classification accuracy (validation): {}".format(correct / float(n_validation_data))
 
