@@ -33,32 +33,6 @@ class Config(params.Params):
 		self.use_weightnorm = False
 		self.num_mc_samples = 1
 
-def sum_sqnorm(arr):
-	sq_sum = collections.defaultdict(float)
-	for x in arr:
-		with cuda.get_device(x) as dev:
-			x = x.ravel()
-			s = x.dot(x)
-			sq_sum[int(dev)] += s
-	return sum([float(i) for i in six.itervalues(sq_sum)])
-	
-class GradientClipping(object):
-	name = "GradientClipping"
-
-	def __init__(self, threshold):
-		self.threshold = threshold
-
-	def __call__(self, opt):
-		norm = np.sqrt(sum_sqnorm([p.grad for p in opt.target.params()]))
-		if norm == 0:
-			return
-		rate = self.threshold / norm
-		if rate < 1:
-			for param in opt.target.params():
-				grad = param.grad
-				with cuda.get_device(grad):
-					grad *= rate
-
 class DGM(object):
 	def __init__(self, params):
 		self.params = copy.deepcopy(params)
