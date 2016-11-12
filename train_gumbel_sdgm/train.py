@@ -45,6 +45,7 @@ def main():
 		sdgm.compute_lower_bound(images_l, label_onehot_l, images_u)
 
 	# training
+	temperature = 1
 	progress = Progress()
 	for epoch in xrange(1, max_epoch):
 		progress.start_epoch(epoch, max_epoch)
@@ -57,8 +58,8 @@ def main():
 			images_l, label_onehot_l, label_ids_l = dataset.sample_labeled_data(training_images_l, training_labels_l, batchsize_l, config.ndim_x, config.ndim_y)
 			images_u = dataset.sample_unlabeled_data(training_images_u, batchsize_u, config.ndim_x)
 
-			# lower bound loss 
-			lower_bound, lb_labeled, lb_unlabeled = sdgm.compute_lower_bound(images_l, label_onehot_l, images_u)
+			# lower bound loss using gumbel-softmax
+			lower_bound, lb_labeled, lb_unlabeled = sdgm.compute_lower_bound_gumbel(images_l, label_onehot_l, images_u, temperature)
 			loss_lower_bound = -lower_bound
 			sdgm.backprop(loss_lower_bound)
 
@@ -92,7 +93,11 @@ def main():
 			"lb_l": sum_lower_bound_u / num_trains_per_epoch,
 			"supervised loss": sum_loss_classifier / num_trains_per_epoch,
 			"accuracy": validation_accuracy,
+			"tmp": temperature,
 		})
+
+		# anneal the temperature
+		temperature = max(0.5, temperature * 0.999)
 
 		# write accuracy to csv
 		csv_results.append([epoch, validation_accuracy])

@@ -1,6 +1,11 @@
 ## Auxiliary Deep Generative Models
 
-This is the Chainer implementation of [Auxiliary Deep Generative Models [arXiv:1602.05473]](http://arxiv.org/abs/1602.05473)
+Chainer implementation of the papers:
+
+- [Auxiliary Deep Generative Models](http://arxiv.org/abs/1602.05473)
+- [Improving Stochastic Gradient Descent with Feedback](https://arxiv.org/abs/1611.01505)
+- [Weight Normalization: A Simple Reparameterization to Accelerate Training of Deep Neural Networks](https://arxiv.org/abs/1602.07868)
+- [Categorical Reparameterization with Gumbel-Softmax](https://arxiv.org/abs/1611.01144)
 
 [この記事](http://musyoku.github.io/2016/09/10/Auxiliary-Deep-Generative-Models/)で実装したコードです。
 
@@ -10,18 +15,15 @@ See also:
 
 ### Requirements
 
-- Chainer 1.12+
-- Pillow
+- Chainer 1.17
 - Pylab
-- matplotlib.patches
 - pandas
 
+this code contains following repos:
+
+- [chainer-sequential](https://github.com/musyoku/chainer-sequential)
 
 ## Runnning
-
-### Download MNIST
-
-run `mnist-tools.py` to download and extract MNIST.
 
 ### ADGM
 

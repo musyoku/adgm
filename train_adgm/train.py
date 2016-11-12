@@ -1,118 +1,104 @@
-# -*- coding: utf-8 -*-
-import os, sys, time
 import numpy as np
-from chainer import cuda, Variable
+import os, sys, time
+from chainer import cuda
+from chainer import functions as F
 import pandas as pd
 sys.path.append(os.path.split(os.getcwd())[0])
-import util, sampler
+import dataset
+from progress import Progress
+from model import adgm
 from args import args
-from model import conf, adgm
 
-def sample_labeled_data():
-	x_labeled, y_labeled, label_ids = sampler.x_and_label_data(batchsize_labeled, conf.ndim_x, conf.ndim_y, dataset_labeled, label_ids_labeled)
+def main():
+	# load MNIST images
+	images, labels = dataset.load_train_images()
 
-	# binalize
-	x_labeled = util.binarize_data(x_labeled)
+	# config
+	config = adgm.config
 
-	return x_labeled, y_labeled, label_ids
+	# settings
+	max_epoch = 1000
+	num_trains_per_epoch = 500
+	batchsize_l = 100
+	batchsize_u = 200
 
-def sample_validation_data():
-	x_labeled, _, label_ids = sampler.x_and_label_data(n_validation_data, conf.ndim_x, conf.ndim_y, dataset_validation, label_ids_validation)
+	# seed
+	np.random.seed(args.seed)
+	if args.gpu_device != -1:
+		cuda.cupy.random.seed(args.seed)
 
-	# binalize
-	x_labeled = util.binarize_data(x_labeled)
+	# save validation accuracy per epoch
+	csv_results = []
 
-	return x_labeled, label_ids
+	# create semi-supervised split
+	num_validation_data = 10000
+	num_labeled_data = 100
+	num_types_of_label = 10
+	training_images_l, training_labels_l, training_images_u, validation_images, validation_labels = dataset.create_semisupervised(images, labels, num_validation_data, num_labeled_data, num_types_of_label, seed=args.seed)
+	print training_labels_l
 
-def sample_unlabeled_data():
-	x_unlabeled = sampler.x_data(batchsize_unlabeled, conf.ndim_x, dataset_unlabeld)
+	# init weightnorm layers
+	if config.use_weightnorm:
+		print "initializing weight normalization layers ..."
+		images_l, label_onehot_l, label_id_l = dataset.sample_labeled_data(training_images_l, training_labels_l, batchsize_l, config.ndim_x, config.ndim_y)
+		images_u = dataset.sample_unlabeled_data(training_images_u, batchsize_u, config.ndim_x)
+		adgm.compute_lower_bound(images_l, label_onehot_l, images_u)
 
-	# binalize
-	x_unlabeled = util.binarize_data(x_unlabeled)
+	# training
+	progress = Progress()
+	for epoch in xrange(1, max_epoch):
+		progress.start_epoch(epoch, max_epoch)
+		sum_lower_bound_l = 0
+		sum_lower_bound_u = 0
+		sum_loss_classifier = 0
 
-	return x_unlabeled
+		for t in xrange(num_trains_per_epoch):
+			# sample from data distribution
+			images_l, label_onehot_l, label_ids_l = dataset.sample_labeled_data(training_images_l, training_labels_l, batchsize_l, config.ndim_x, config.ndim_y)
+			images_u = dataset.sample_unlabeled_data(training_images_u, batchsize_u, config.ndim_x)
 
-max_epoch = 1000
-n_trains_per_epoch = 300
-n_types_of_label = conf.ndim_y
-n_labeled_data = args.n_labeled_data
-n_validation_data = args.n_validation_data
-batchsize_labeled = 100
-batchsize_unlabeled = 200
+			# lower bound loss 
+			lower_bound, lb_labeled, lb_unlabeled = adgm.compute_lower_bound(images_l, label_onehot_l, images_u)
+			loss_lower_bound = -lower_bound
+			adgm.backprop(loss_lower_bound)
 
-# export result to csv
-csv_epochs = []
+			# classification loss
+			a_l = adgm.encode_x_a(images_l, False)
+			unnormalized_y_distribution = adgm.encode_ax_y_distribution(a_l, images_l, softmax=False)
+			loss_classifier = F.softmax_cross_entropy(unnormalized_y_distribution, adgm.to_variable(label_ids_l))
+			adgm.backprop_classifier(loss_classifier)
 
-# load all images
-dataset_all, label_ids_all = util.load_labeled_images(args.train_image_dir)
+			sum_lower_bound_l += float(lb_labeled.data)
+			sum_lower_bound_u += float(lb_unlabeled.data)
+			sum_loss_classifier += float(loss_classifier.data)
+			progress.show(t, num_trains_per_epoch, {})
 
-# Create labeled/unlabeled split in training set
-dataset_labeled, label_ids_labeled, dataset_unlabeld, dataset_validation, label_ids_validation = util.create_semisupervised(dataset_all, label_ids_all, n_validation_data, n_labeled_data, n_types_of_label, seed=args.seed_ssl_split)
-print "labels for supervised training:", label_ids_labeled
-# alpha = 0.1 * len(dataset) / len(dataset_labeled)
-alpha = 1.0
-print "alpha:", alpha
-print "dataset:: labeled: {} unlabeled: {} validation: {}".format(len(dataset_labeled), len(dataset_unlabeld), len(dataset_validation))
+		adgm.save(args.model_dir)
 
-# fix
-if n_labeled_data < batchsize_labeled:
-	batchsize_labeled = n_labeled_data
-	
-if len(dataset_unlabeld) < batchsize_unlabeled:
-	batchsize_unlabeled = len(dataset_unlabeld)
+		# validation
+		images_v, _, label_ids_v = dataset.sample_labeled_data(validation_images, validation_labels, num_validation_data, config.ndim_x, config.ndim_y)
+		images_v_segments = np.split(images_v, num_validation_data // 500)
+		label_ids_v_segments = np.split(label_ids_v, num_validation_data // 500)
+		correct = 0
+		for images_v, labels_v in zip(images_v_segments, label_ids_v_segments):
+			predicted_labels = adgm.sample_x_label(images_v, test=True)
+			for i, label in enumerate(predicted_labels):
+				if label == labels_v[i]:
+					correct += 1
+		validation_accuracy = correct / float(num_validation_data)
+		
+		progress.show(num_trains_per_epoch, num_trains_per_epoch, {
+			"lb_u": sum_lower_bound_l / num_trains_per_epoch,
+			"lb_l": sum_lower_bound_u / num_trains_per_epoch,
+			"supervised loss": sum_loss_classifier / num_trains_per_epoch,
+			"accuracy": validation_accuracy,
+		})
 
-# seed
-np.random.seed(args.seed)
-if conf.gpu_enabled:
-    cuda.cupy.random.seed(args.seed)
+		# write accuracy to csv
+		csv_results.append([epoch, validation_accuracy])
+		data = pd.DataFrame(csv_results)
+		data.columns = ["epoch", "accuracy"]
+		data.to_csv("{}/result.csv".format(args.model_dir))
 
-total_time = 0
-for epoch in xrange(max_epoch):
-	sum_loss_labeled = 0
-	sum_loss_unlabeled = 0
-	sum_loss_classifier = 0
-	epoch_time = time.time()
-
-	for t in xrange(n_trains_per_epoch):
-		# sample labeled data
-		x_labeled, y_labeled, label_ids = sample_labeled_data()
-
-		# sample unlabeled data
-		x_unlabeled = sample_unlabeled_data()
-
-		# train
-		loss_labeled, loss_unlabeled = adgm.train(x_labeled, y_labeled, x_unlabeled)
-		loss_classifier = adgm.train_classification(x_labeled, label_ids, alpha=alpha)
-
-		sum_loss_labeled += loss_labeled
-		sum_loss_unlabeled += loss_unlabeled
-		sum_loss_classifier += loss_classifier
-		if t % 10 == 0:
-			sys.stdout.write("\rTraining in progress...({} / {})".format(t, n_trains_per_epoch))
-			sys.stdout.flush()
-
-	epoch_time = time.time() - epoch_time
-	total_time += epoch_time
-	sys.stdout.write("\r")
-	print "epoch: {} loss:: labeled: {:.3f} unlabeled: {:.3f} classifier: {:.3f} time: {} min total: {} min".format(epoch + 1, sum_loss_labeled / n_trains_per_epoch, sum_loss_unlabeled / n_trains_per_epoch, sum_loss_classifier / n_trains_per_epoch, int(epoch_time / 60), int(total_time / 60))
-	sys.stdout.flush()
-	adgm.save(args.model_dir)
-
-	# validation
-	x_labeled, label_ids = sample_validation_data()
-	x_labeled = Variable(x_labeled)
-	if conf.gpu_enabled:
-		x_labeled.to_gpu()
-	predicted_ids = adgm.sample_x_label(x_labeled, test=True, argmax=True)
-	correct = 0
-	for i in xrange(n_validation_data):
-		if predicted_ids[i] == label_ids[i]:
-			correct += 1
-	print "classification accuracy (validation): {}".format(correct / float(n_validation_data))
-
-	# export to csv
-	csv_epochs.append([epoch, int(total_time / 60), correct / float(n_validation_data)])
-	data = pd.DataFrame(csv_epochs)
-	data.columns = ["epoch", "min", "accuracy"]
-	data.to_csv("{}/epoch.csv".format(args.model_dir))
-
+if __name__ == "__main__":
+	main()
