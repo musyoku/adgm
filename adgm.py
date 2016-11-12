@@ -257,26 +257,25 @@ class DGM(object):
 		### lower bound of unlabeled data ###
 		if batchsize_u > 0:
 			unlabeled_x_repeat = unlabeled_x
-			sampled_y_repeat = self.sample_x_y_gumbel(unlabeled_x, temperature)
 
 			# repeat num_mc_samples times
 			if num_mc_samples > 1:
 				unlabeled_x_repeat = self.to_variable(np.broadcast_to(labeled_x_cpu_data, (num_mc_samples, batchsize_u, labeled_x_cpu_data.shape[1])).reshape((batchsize_u * num_mc_samples, -1)))
-				sampled_y_repeat = F.reshape(F.broadcast_to(sampled_y_repeat, (num_mc_samples, batchsize_u, sampled_y_repeat.shape[1])), (batchsize_u * num_mc_samples, -1))
 
-			a_mean_l, a_ln_var_l = self.q_a_x(unlabeled_x_repeat, test=test)
-			a_l = F.gaussian(a_mean_l, a_ln_var_l)
-			z_mean_l, z_ln_var_l = self.q_z_axy(a_l, unlabeled_x_repeat, sampled_y_repeat, test=test)
-			z_l = F.gaussian(z_mean_l, z_ln_var_l)
+			y_u = self.sample_x_y_gumbel(unlabeled_x_repeat, temperature)
+			a_mean_u, a_un_var_u = self.q_a_x(unlabeled_x_repeat, test=test)
+			a_u = F.gaussian(a_mean_u, a_un_var_u)
+			z_mean_u, z_un_var_u = self.q_z_axy(a_u, unlabeled_x_repeat, y_u, test=test)
+			z_u = F.gaussian(z_mean_u, z_un_var_u)
 
 			# compute lower bound
-			log_pa_l = self.log_pa(a_l, unlabeled_x_repeat, sampled_y_repeat, z_l)
-			log_px_l = self.log_px(a_l, unlabeled_x_repeat, sampled_y_repeat, z_l, test=test)
-			log_py_l = self.log_py(sampled_y_repeat)
-			log_pz_l = self.log_pz(z_l)
-			log_qa_l = -self.gaussian_nll_keepbatch(a_l, a_mean_l, a_ln_var_l)	# 'gaussian_nll_keepbatch' returns the negative log-likelihood
-			log_qz_l = -self.gaussian_nll_keepbatch(z_l, z_mean_l, z_ln_var_l)
-			lower_bound_u = lower_bound(log_px_l, log_py_l, log_pa_l, log_pz_l, log_qz_l, log_qa_l)
+			log_pa_u = self.log_pa(a_u, unlabeled_x_repeat, y_u, z_u)
+			log_px_u = self.log_px(a_u, unlabeled_x_repeat, y_u, z_u, test=test)
+			log_py_u = self.log_py(y_u)
+			log_pz_u = self.log_pz(z_u)
+			log_qa_u = -self.gaussian_nll_keepbatch(a_u, a_mean_u, a_un_var_u)	# 'gaussian_nll_keepbatch' returns the negative log-likelihood
+			log_qz_u = -self.gaussian_nll_keepbatch(z_u, z_mean_u, z_un_var_u)
+			lower_bound_u = lower_bound(log_px_u, log_py_u, log_pa_u, log_pz_u, log_qz_u, log_qa_u)
 
 			# take the average
 			if num_mc_samples > 1:
