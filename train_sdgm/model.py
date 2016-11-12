@@ -15,7 +15,6 @@ try:
 except:
 	pass
 
-# specify energy model
 model_filename = args.model_dir + "/model.json"
 
 if os.path.isfile(model_filename):
