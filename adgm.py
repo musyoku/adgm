@@ -263,18 +263,18 @@ class DGM(object):
 				unlabeled_x_repeat = self.to_variable(np.broadcast_to(labeled_x_cpu_data, (num_mc_samples, batchsize_u, labeled_x_cpu_data.shape[1])).reshape((batchsize_u * num_mc_samples, -1)))
 
 			y_u = self.sample_x_y_gumbel(unlabeled_x_repeat, temperature)
-			a_mean_u, a_un_var_u = self.q_a_x(unlabeled_x_repeat, test=test)
-			a_u = F.gaussian(a_mean_u, a_un_var_u)
-			z_mean_u, z_un_var_u = self.q_z_axy(a_u, unlabeled_x_repeat, y_u, test=test)
-			z_u = F.gaussian(z_mean_u, z_un_var_u)
+			a_mean_u, a_ln_var_u = self.q_a_x(unlabeled_x_repeat, test=test)
+			a_u = F.gaussian(a_mean_u, a_ln_var_u)
+			z_mean_u, z_ln_var_u = self.q_z_axy(a_u, unlabeled_x_repeat, y_u, test=test)
+			z_u = F.gaussian(z_mean_u, z_ln_var_u)
 
 			# compute lower bound
 			log_pa_u = self.log_pa(a_u, unlabeled_x_repeat, y_u, z_u)
 			log_px_u = self.log_px(a_u, unlabeled_x_repeat, y_u, z_u, test=test)
 			log_py_u = self.log_py(y_u)
 			log_pz_u = self.log_pz(z_u)
-			log_qa_u = -self.gaussian_nll_keepbatch(a_u, a_mean_u, a_un_var_u)	# 'gaussian_nll_keepbatch' returns the negative log-likelihood
-			log_qz_u = -self.gaussian_nll_keepbatch(z_u, z_mean_u, z_un_var_u)
+			log_qa_u = -self.gaussian_nll_keepbatch(a_u, a_mean_u, a_ln_var_u)	# 'gaussian_nll_keepbatch' returns the negative log-likelihood
+			log_qz_u = -self.gaussian_nll_keepbatch(z_u, z_mean_u, z_ln_var_u)
 			lower_bound_u = lower_bound(log_px_u, log_py_u, log_pa_u, log_pz_u, log_qz_u, log_qa_u)
 
 			# take the average
