@@ -24,7 +24,7 @@ def load_mnist(data_filename, label_filename, num):
 			for j in six.moves.range(dim):
 				images[i, j] = ord(f_images.read(1))
 
-			if i % 99 == 0 or i == num - 1:
+			if i % 100 == 99 or i == num - 1:
 				sys.stdout.write("\rloading images ... ({} / {})".format(i + 1, num))
 				sys.stdout.flush()
 	sys.stdout.write("\n")
