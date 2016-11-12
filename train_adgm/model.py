@@ -9,7 +9,6 @@ from sequential import Sequential
 from sequential.link import Linear, Merge, BatchNormalization, Gaussian
 from sequential.function import Activation, dropout, gaussian_noise, tanh, sigmoid
 
-# load params.json
 try:
 	os.mkdir(args.model_dir)
 except:
