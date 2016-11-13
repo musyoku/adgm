@@ -96,11 +96,13 @@ class Eve(optimizer.GradientMethod):
 		fix2 = 1. - self.beta2 ** self.t
 		return self.alpha * math.sqrt(fix2) / fix1
 
-	def update(self, loss=None):
-		if loss is None:
-			raise Exception()
-		self.loss = float(loss.data)
-		super(Eve, self).update(loss)
+	def update(self, lossfun=None, *args, **kwds):
+		# Overwrites GradientMethod.update in order to get loss values
+		if lossfun is None:
+			raise RuntimeError('Eve.update requires lossfun to be specified')
+			loss_var = lossfun(*args, **kwds)
+			self.loss = float(loss_var.data)
+			super(Eve, self).update(lossfun=lambda: loss_var)
 
 def get_optimizer(name, lr, momentum=0.9):
 	if name.lower() == "adam":
