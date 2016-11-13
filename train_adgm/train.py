@@ -61,13 +61,14 @@ def main():
 			# lower bound loss 
 			lower_bound, lb_labeled, lb_unlabeled = adgm.compute_lower_bound(images_l, label_onehot_l, images_u)
 			loss_lower_bound = -lower_bound
-			adgm.backprop(loss_lower_bound)
 
 			# classification loss
 			a_l = adgm.encode_x_a(images_l, False)
 			unnormalized_y_distribution = adgm.encode_ax_y_distribution(a_l, images_l, softmax=False)
 			loss_classifier = alpha * F.softmax_cross_entropy(unnormalized_y_distribution, adgm.to_variable(label_ids_l))
-			adgm.backprop_classifier(loss_classifier)
+
+			# backprop
+			adgm.backprop(loss_classifier + loss_lower_bound)
 
 			sum_lower_bound_l += float(lb_labeled.data)
 			sum_lower_bound_u += float(lb_unlabeled.data)

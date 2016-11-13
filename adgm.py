@@ -34,10 +34,34 @@ class Config(params.Params):
 		self.num_mc_samples = 1
 
 class DGM(object):
+
 	def __init__(self, params):
+		super(DGM, self).__init__()
 		self.params = copy.deepcopy(params)
 		self.config = to_object(params["config"])
+		self.chain = sequential.chain.Chain()
 		self._gpu = False
+
+	def load(self, dir=None):
+		if dir is None:
+			raise Exception()
+		self.chain.load(dir + "/adgm.hdf5")
+
+	def save(self, dir=None):
+		if dir is None:
+			raise Exception()
+		try:
+			os.mkdir(dir)
+		except:
+			pass
+		self.chain.save(dir + "/adgm.hdf5")
+
+	def backprop(self, loss):
+		self.chain.backprop(loss)
+
+	def to_gpu(self):
+		self.chain.to_gpu()
+		self._gpu = True
 
 	@property
 	def gpu_enabled(self):
@@ -433,29 +457,19 @@ class ADGM(DGM):
 		super(ADGM, self).__init__(params)
 		params = self.params
 		config = self.config
-		self.p_a_xyz = sequential.chain.Chain()
-		self.p_a_xyz.add_sequence(sequential.from_dict(params["p_a_xyz"]))
-		self.p_a_xyz.setup_optimizers(config.optimizer, config.learning_rate, config.momentum)
-		self.p_x_yz = sequential.chain.Chain()
-		self.p_x_yz.add_sequence(sequential.from_dict(params["p_x_yz"]))
-		self.p_x_yz.setup_optimizers(config.optimizer, config.learning_rate, config.momentum)
-		self.q_a_x = sequential.chain.Chain()
-		self.q_a_x.add_sequence(sequential.from_dict(params["q_a_x"]))
-		self.q_a_x.setup_optimizers(config.optimizer, config.learning_rate, config.momentum)
-		self.q_y_ax = sequential.chain.Chain()
-		self.q_y_ax.add_sequence(sequential.from_dict(params["q_y_ax"]))
-		self.q_y_ax.setup_optimizers(config.optimizer, config.learning_rate, config.momentum)
-		self.q_z_axy = sequential.chain.Chain()
-		self.q_z_axy.add_sequence(sequential.from_dict(params["q_z_axy"]))
-		self.q_z_axy.setup_optimizers(config.optimizer, config.learning_rate, config.momentum)
 
-	def to_gpu(self):
-		self.p_a_xyz.to_gpu()
-		self.p_x_yz.to_gpu()
-		self.q_a_x.to_gpu()
-		self.q_y_ax.to_gpu()
-		self.q_z_axy.to_gpu()
-		self._gpu = True
+		self.p_a_xyz = sequential.from_dict(params["p_a_xyz"])
+		self.chain.add_sequence_with_name(self.p_a_xyz, "p_a_xyz")
+		self.p_x_yz = sequential.from_dict(params["p_x_yz"])
+		self.chain.add_sequence_with_name(self.p_x_yz, "p_x_yz")
+		self.q_a_x = sequential.from_dict(params["q_a_x"])
+		self.chain.add_sequence_with_name(self.q_a_x, "q_a_x")
+		self.q_y_ax = sequential.from_dict(params["q_y_ax"])
+		self.chain.add_sequence_with_name(self.q_y_ax, "q_y_ax")
+		self.q_z_axy = sequential.from_dict(params["q_z_axy"])
+		self.chain.add_sequence_with_name(self.q_z_axy, "q_z_axy")
+
+		self.chain.setup_optimizers(config.optimizer, config.learning_rate, config.momentum)
 
 	def decode_yz_x(self, y, z, test=False):
 		y = self.to_variable(y)
@@ -479,66 +493,24 @@ class ADGM(DGM):
 		log_px_yz = -negative_log_likelihood
 		return log_px_yz
 
-	def backprop(self, loss):
-		self.p_x_yz.backprop(loss)
-		self.p_a_xyz.backprop(loss)
-		self.q_a_x.backprop(loss)
-		self.q_y_ax.backprop(loss)
-		self.q_z_axy.backprop(loss)
-
-	def backprop_classifier(self, loss):
-		self.q_y_ax.backprop(loss)
-
-	def load(self, dir=None):
-		if dir is None:
-			raise Exception()
-		self.p_a_xyz.load(dir + "/p_a_xyz.hdf5")
-		self.p_x_yz.load(dir + "/p_x_yz.hdf5")
-		self.q_a_x.load(dir + "/q_a_x.hdf5")
-		self.q_y_ax.load(dir + "/q_y_ax.hdf5")
-		self.q_z_axy.load(dir + "/q_z_axy.hdf5")
-
-	def save(self, dir=None):
-		if dir is None:
-			raise Exception()
-		try:
-			os.mkdir(dir)
-		except:
-			pass
-		self.p_a_xyz.save(dir + "/p_a_xyz.hdf5")
-		self.p_x_yz.save(dir + "/p_x_yz.hdf5")
-		self.q_a_x.save(dir + "/q_a_x.hdf5")
-		self.q_y_ax.save(dir + "/q_y_ax.hdf5")
-		self.q_z_axy.save(dir + "/q_z_axy.hdf5")
-
 class SDGM(DGM):
 	def __init__(self, params):
 		super(SDGM, self).__init__(params)
 		params = self.params
 		config = self.config
-		self.p_a_yz = sequential.chain.Chain()
-		self.p_a_yz.add_sequence(sequential.from_dict(params["p_a_yz"]))
-		self.p_a_yz.setup_optimizers(config.optimizer, config.learning_rate, config.momentum)
-		self.p_x_ayz = sequential.chain.Chain()
-		self.p_x_ayz.add_sequence(sequential.from_dict(params["p_x_ayz"]))
-		self.p_x_ayz.setup_optimizers(config.optimizer, config.learning_rate, config.momentum)
-		self.q_a_x = sequential.chain.Chain()
-		self.q_a_x.add_sequence(sequential.from_dict(params["q_a_x"]))
-		self.q_a_x.setup_optimizers(config.optimizer, config.learning_rate, config.momentum)
-		self.q_y_ax = sequential.chain.Chain()
-		self.q_y_ax.add_sequence(sequential.from_dict(params["q_y_ax"]))
-		self.q_y_ax.setup_optimizers(config.optimizer, config.learning_rate, config.momentum)
-		self.q_z_axy = sequential.chain.Chain()
-		self.q_z_axy.add_sequence(sequential.from_dict(params["q_z_axy"]))
-		self.q_z_axy.setup_optimizers(config.optimizer, config.learning_rate, config.momentum)
 
-	def to_gpu(self):
-		self.p_a_yz.to_gpu()
-		self.p_x_ayz.to_gpu()
-		self.q_a_x.to_gpu()
-		self.q_y_ax.to_gpu()
-		self.q_z_axy.to_gpu()
-		self._gpu = True
+		self.p_a_yz = sequential.from_dict(params["p_a_yz"])
+		self.chain.add_sequence_with_name(self.p_a_yz, "p_a_yz")
+		self.p_x_ayz = sequential.from_dict(params["p_x_ayz"])
+		self.chain.add_sequence_with_name(self.p_x_ayz, "p_x_ayz")
+		self.q_a_x = sequential.from_dict(params["q_a_x"])
+		self.chain.add_sequence_with_name(self.q_a_x, "q_a_x")
+		self.q_y_ax = sequential.from_dict(params["q_y_ax"])
+		self.chain.add_sequence_with_name(self.q_y_ax, "q_y_ax")
+		self.q_z_axy = sequential.from_dict(params["q_z_axy"])
+		self.chain.add_sequence_with_name(self.q_z_axy, "q_z_axy")
+
+		self.chain.setup_optimizers(config.optimizer, config.learning_rate, config.momentum)
 
 	def decode_ayz_x(self, a, y, z, test=False):
 		a = self.to_variable(a)
@@ -568,35 +540,3 @@ class SDGM(DGM):
 		negative_log_likelihood = self.gaussian_nll_keepbatch(a_q, a_mean_p, a_ln_var_p)
 		log_px_yz = -negative_log_likelihood
 		return log_px_yz
-
-	def backprop(self, loss):
-		self.p_x_ayz.backprop(loss)
-		self.p_a_yz.backprop(loss)
-		self.q_a_x.backprop(loss)
-		self.q_y_ax.backprop(loss)
-		self.q_z_axy.backprop(loss)
-
-	def backprop_classifier(self, loss):
-		self.q_y_ax.backprop(loss)
-
-	def load(self, dir=None):
-		if dir is None:
-			raise Exception()
-		self.p_a_yz.load(dir + "/p_a_yz.hdf5")
-		self.p_x_ayz.load(dir + "/p_x_ayz.hdf5")
-		self.q_a_x.load(dir + "/q_a_x.hdf5")
-		self.q_y_ax.load(dir + "/q_y_ax.hdf5")
-		self.q_z_axy.load(dir + "/q_z_axy.hdf5")
-
-	def save(self, dir=None):
-		if dir is None:
-			raise Exception()
-		try:
-			os.mkdir(dir)
-		except:
-			pass
-		self.p_a_yz.save(dir + "/p_a_yz.hdf5")
-		self.p_x_ayz.save(dir + "/p_x_ayz.hdf5")
-		self.q_a_x.save(dir + "/q_a_x.hdf5")
-		self.q_y_ax.save(dir + "/q_y_ax.hdf5")
-		self.q_z_axy.save(dir + "/q_z_axy.hdf5")
