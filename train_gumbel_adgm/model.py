@@ -38,7 +38,7 @@ else:
 	config.gradient_clipping = 10
 	config.weight_decay = 0
 	config.use_weightnorm = False
-	config.num_mc_samples = 5
+	config.num_mc_samples = 1
 
 	# p(x|y,z) - x ~ Bernoulli
 	p_x_yz = Sequential(weight_initializer=config.weight_initializer, weight_init_std=config.weight_init_std)
