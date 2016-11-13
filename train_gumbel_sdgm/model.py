@@ -32,7 +32,7 @@ else:
 	config.weight_init_std = 0.01
 	config.weight_initializer = "Normal"
 	config.nonlinearity = "elu"
-	config.optimizer = "Eve"
+	config.optimizer = "Adam"
 	config.learning_rate = 0.0003
 	config.momentum = 0.9
 	config.gradient_clipping = 10

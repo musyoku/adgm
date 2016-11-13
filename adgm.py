@@ -190,8 +190,11 @@ class DGM(object):
 		kld = F.sum(mean * mean + var - ln_var - 1, axis=1) * 0.5
 		return kld
 
-	def log_pa(self, a, x, y, z, test=False):
+	def log_pa_xyz(self, a, x, y, z, test=False):
 		a_mean, a_ln_var = self.p_a_xyz(x, y, z, test=test)
+		return log_pa(a, a_mean, a_ln_var)
+
+	def log_pa(self, a, a_mean, a_ln_var):
 		negative_log_likelihood = self.gaussian_nll_keepbatch(a, a_mean, a_ln_var)
 		log_px_yz = -negative_log_likelihood
 		return log_px_yz
@@ -209,42 +212,39 @@ class DGM(object):
 		return F.sum(log_pz, axis=1)
 
 	# compute lower bound using gumbel-softmax
-	def compute_lower_bound_gumbel(self, labeled_x_cpu_data, labeled_y_cpu_data, unlabeled_x_cpu_data, temperature, test=False):
-		assert(isinstance(labeled_x_cpu_data, np.ndarray))
+	def compute_lower_bound_gumbel(self, x_l_cpu_data, y_l_cpu_data, x_u_cpu_data, temperature, test=False):
+		assert(isinstance(x_l_cpu_data, np.ndarray))
 
 		def lower_bound(log_px, log_py, log_pa, log_pz, log_qz, log_qa):
 			return log_px + log_py + log_pa + log_pz - log_qz - log_qa
 
-		labeled_x = self.to_variable(labeled_x_cpu_data)
-		labeled_y = self.to_variable(labeled_y_cpu_data)
-		unlabeled_x = self.to_variable(unlabeled_x_cpu_data)
-
 		# _l: labeled
 		# _u: unlabeled
-		batchsize_l = labeled_x_cpu_data.shape[0]
-		batchsize_u = unlabeled_x_cpu_data.shape[0]
-		n_types_of_label = labeled_y_cpu_data.shape[1]
+		batchsize_l = x_l_cpu_data.shape[0]
+		batchsize_u = x_u_cpu_data.shape[0]
+		n_types_of_label = y_l_cpu_data.shape[1]
+		ndim_x = x_l_cpu_data.shape[1]
 		num_mc_samples = self.config.num_mc_samples
 		xp = self.xp
 
 		### lower bound of labeled data ###
-		labeled_x_repeat = labeled_x
-		labeled_y_repeat = labeled_y
-
 		# repeat num_mc_samples times
-		if num_mc_samples > 1:
-			labeled_x_repeat = self.to_variable(np.repeat(labeled_x_cpu_data, num_mc_samples, axis=0))
-			labeled_y_repeat = self.to_variable(np.repeat(labeled_y_cpu_data, num_mc_samples, axis=0))
+		if num_mc_samples == 1:
+			x_l = self.to_variable(x_l_cpu_data)
+			y_l = self.to_variable(y_l_cpu_data)
+		else:
+			x_l = self.to_variable(np.repeat(x_l_cpu_data, num_mc_samples, axis=0))
+			y_l = self.to_variable(np.repeat(y_l_cpu_data, num_mc_samples, axis=0))
 
-		a_mean_l, a_ln_var_l = self.q_a_x(labeled_x_repeat, test=test)
+		a_mean_l, a_ln_var_l = self.q_a_x(x_l, test=test)
 		a_l = F.gaussian(a_mean_l, a_ln_var_l)
-		z_mean_l, z_ln_var_l = self.q_z_axy(a_l, labeled_x_repeat, labeled_y_repeat, test=test)
+		z_mean_l, z_ln_var_l = self.q_z_axy(a_l, x_l, y_l, test=test)
 		z_l = F.gaussian(z_mean_l, z_ln_var_l)
 
 		# compute lower bound
-		log_pa_l = self.log_pa(a_l, labeled_x_repeat, labeled_y_repeat, z_l)
-		log_px_l = self.log_px(a_l, labeled_x_repeat, labeled_y_repeat, z_l, test=test)
-		log_py_l = self.log_py(labeled_y_repeat)
+		log_pa_l = self.log_pa(a_l, a_mean_l, a_ln_var_l)
+		log_px_l = self.log_px(a_l, x_l, y_l, z_l, test=test)
+		log_py_l = self.log_py(y_l)
 		log_pz_l = self.log_pz(z_l)
 		log_qa_l = -self.gaussian_nll_keepbatch(a_l, a_mean_l, a_ln_var_l)	# 'gaussian_nll_keepbatch' returns the negative log-likelihood
 		log_qz_l = -self.gaussian_nll_keepbatch(z_l, z_mean_l, z_ln_var_l)
@@ -256,21 +256,21 @@ class DGM(object):
 
 		### lower bound of unlabeled data ###
 		if batchsize_u > 0:
-			unlabeled_x_repeat = unlabeled_x
-
 			# repeat num_mc_samples times
-			if num_mc_samples > 1:
-				unlabeled_x_repeat = self.to_variable(np.broadcast_to(labeled_x_cpu_data, (num_mc_samples, batchsize_u, labeled_x_cpu_data.shape[1])).reshape((batchsize_u * num_mc_samples, -1)))
+			if num_mc_samples == 1:
+				x_u = self.to_variable(x_u_cpu_data)
+			else:
+				x_u = self.to_variable(np.repeat(x_u_cpu_data, num_mc_samples, axis=0))
 
-			y_u = self.sample_x_y_gumbel(unlabeled_x_repeat, temperature)
-			a_mean_u, a_ln_var_u = self.q_a_x(unlabeled_x_repeat, test=test)
+			a_mean_u, a_ln_var_u = self.q_a_x(x_u, test=test)
 			a_u = F.gaussian(a_mean_u, a_ln_var_u)
-			z_mean_u, z_ln_var_u = self.q_z_axy(a_u, unlabeled_x_repeat, y_u, test=test)
+			y_u = self.sample_ax_y_gumbel(a_u, x_u, temperature)
+			z_mean_u, z_ln_var_u = self.q_z_axy(a_u, x_u, y_u, test=test)
 			z_u = F.gaussian(z_mean_u, z_ln_var_u)
 
 			# compute lower bound
-			log_pa_u = self.log_pa(a_u, unlabeled_x_repeat, y_u, z_u)
-			log_px_u = self.log_px(a_u, unlabeled_x_repeat, y_u, z_u, test=test)
+			log_pa_u = self.log_pa(a_u, a_mean_u, a_ln_var_u)
+			log_px_u = self.log_px(a_u, x_u, y_u, z_u, test=test)
 			log_py_u = self.log_py(y_u)
 			log_pz_u = self.log_pz(z_u)
 			log_qa_u = -self.gaussian_nll_keepbatch(a_u, a_mean_u, a_ln_var_u)	# 'gaussian_nll_keepbatch' returns the negative log-likelihood
@@ -292,42 +292,40 @@ class DGM(object):
 		return lower_bound, lb_labeled, lb_unlabeled
 
 	# compute lower bound by marginalizing out y over all classes
-	def compute_lower_bound(self, labeled_x_cpu_data, labeled_y_cpu_data, unlabeled_x_cpu_data, test=False):
-		assert(isinstance(labeled_x_cpu_data, np.ndarray))
+	def compute_lower_bound(self, x_l_cpu_data, y_l_cpu_data, x_u_cpu_data, test=False):
+		assert(isinstance(x_l_cpu_data, np.ndarray))
 
 		def lower_bound(log_px, log_py, log_pa, log_pz, log_qz, log_qa):
 			return log_px + log_py + log_pa + log_pz - log_qz - log_qa
 
-		labeled_x = self.to_variable(labeled_x_cpu_data)
-		labeled_y = self.to_variable(labeled_y_cpu_data)
-		unlabeled_x = self.to_variable(unlabeled_x_cpu_data)
 
 		# _l: labeled
 		# _u: unlabeled
-		batchsize_l = labeled_x_cpu_data.shape[0]
-		batchsize_u = unlabeled_x_cpu_data.shape[0]
-		n_types_of_label = labeled_y_cpu_data.shape[1]
+		batchsize_l = x_l_cpu_data.shape[0]
+		batchsize_u = x_u_cpu_data.shape[0]
+		ndim_x = x_u_cpu_data.shape[1]
+		n_types_of_label = y_l_cpu_data.shape[1]
 		num_mc_samples = self.config.num_mc_samples
 		xp = self.xp
 
 		### lower bound of labeled data ###
-		labeled_x_repeat = labeled_x
-		labeled_y_repeat = labeled_y
-
 		# repeat num_mc_samples times
-		if num_mc_samples > 1:
-			labeled_x_repeat = self.to_variable(np.repeat(labeled_x_cpu_data, num_mc_samples, axis=0))
-			labeled_y_repeat = self.to_variable(np.repeat(labeled_y_cpu_data, num_mc_samples, axis=0))
+		if num_mc_samples == 1:
+			x_l = self.to_variable(x_l_cpu_data)
+			y_l = self.to_variable(y_l_cpu_data)
+		else:
+			x_l = self.to_variable(np.repeat(x_l_cpu_data, num_mc_samples, axis=0))
+			y_l = self.to_variable(np.repeat(y_l_cpu_data, num_mc_samples, axis=0))
 
-		a_mean_l, a_ln_var_l = self.q_a_x(labeled_x_repeat, test=test)
+		a_mean_l, a_ln_var_l = self.q_a_x(x_l, test=test)
 		a_l = F.gaussian(a_mean_l, a_ln_var_l)
-		z_mean_l, z_ln_var_l = self.q_z_axy(a_l, labeled_x_repeat, labeled_y_repeat, test=test)
+		z_mean_l, z_ln_var_l = self.q_z_axy(a_l, x_l, y_l, test=test)
 		z_l = F.gaussian(z_mean_l, z_ln_var_l)
 
 		# compute lower bound
-		log_pa_l = self.log_pa(a_l, labeled_x_repeat, labeled_y_repeat, z_l)
-		log_px_l = self.log_px(a_l, labeled_x_repeat, labeled_y_repeat, z_l, test=test)
-		log_py_l = self.log_py(labeled_y_repeat)
+		log_pa_l = self.log_pa(a_l, a_mean_l, a_ln_var_l)
+		log_px_l = self.log_px(a_l, x_l, y_l, z_l, test=test)
+		log_py_l = self.log_py(y_l)
 		log_pz_l = self.log_pz(z_l)
 		log_qa_l = -self.gaussian_nll_keepbatch(a_l, a_mean_l, a_ln_var_l)	# 'gaussian_nll_keepbatch' returns the negative log-likelihood
 		log_qz_l = -self.gaussian_nll_keepbatch(z_l, z_mean_l, z_ln_var_l)
@@ -341,7 +339,7 @@ class DGM(object):
 		if batchsize_u > 0:
 			# To marginalize y, we repeat unlabeled x, and construct a target (batchsize_u * n_types_of_label) x n_types_of_label
 			# Example of n-dimensional x and target matrix for a 3 class problem and batch_size=2.
-			#       unlabeled_x_repeat              y_repeat
+			#       x_u              y_repeat
 			#  [[x0[0], x0[1], ..., x0[n]]         [[1, 0, 0]
 			#   [x1[0], x1[1], ..., x1[n]]          [1, 0, 0]
 			#   [x0[0], x0[1], ..., x0[n]]          [0, 1, 0]
@@ -350,31 +348,30 @@ class DGM(object):
 			#   [x1[0], x1[1], ..., x1[n]]]         [0, 0, 1]]
 
 			# marginalize x and y
-			unlabeled_x_marg = np.empty((batchsize_u * n_types_of_label, unlabeled_x_cpu_data.shape[1]), dtype=np.float32)
-			y_marg = np.repeat(np.identity(n_types_of_label, dtype=np.float32), batchsize_u, axis=0)
-			for n in xrange(n_types_of_label):
-				unlabeled_x_marg[n * batchsize_u:(n + 1) * batchsize_u] = unlabeled_x_cpu_data
+			x_u_marg = np.broadcast_to(x_u_cpu_data, (n_types_of_label, batchsize_u, ndim_x)).reshape((batchsize_u * n_types_of_label, ndim_x))
+			y_u_marg = np.repeat(np.identity(n_types_of_label, dtype=np.float32), batchsize_u, axis=0)
 
 			# repeat num_mc_samples times
-			unlabeled_x_repeat = unlabeled_x_marg
-			y_repeat = y_marg
+			x_u = x_u_marg
+			y_u = y_u_marg
 			if num_mc_samples > 1:
-				n_rows_marg = unlabeled_x_marg.shape[0]
+				n_rows_marg = x_u_marg.shape[0]
 				n_rows = n_rows_marg * num_mc_samples
-				unlabeled_x_repeat = np.repeat(unlabeled_x_marg, num_mc_samples, axis=0)
-				y_repeat = np.repeat(y_marg, num_mc_samples, axis=0)
-			unlabeled_x_repeat = self.to_variable(unlabeled_x_repeat)
-			y_repeat = self.to_variable(y_repeat)
+				x_u = np.repeat(x_u_marg, num_mc_samples, axis=0)
+				y_u = np.repeat(y_u_marg, num_mc_samples, axis=0)
 
-			a_mean_u, a_ln_var_u = self.q_a_x(unlabeled_x_repeat, test=test)
+			x_u = self.to_variable(x_u)
+			y_u = self.to_variable(y_u)
+
+			a_mean_u, a_ln_var_u = self.q_a_x(x_u, test=test)
 			a_u = F.gaussian(a_mean_u, a_ln_var_u)
-			z_mean_u, z_ln_var_u = self.q_z_axy(a_u, unlabeled_x_repeat, y_repeat, test=test)
+			z_mean_u, z_ln_var_u = self.q_z_axy(a_u, x_u, y_u, test=test)
 			z_u = F.gaussian(z_mean_u, z_ln_var_u)
 
 			# compute lower bound
-			log_pa_u = self.log_pa(a_u, unlabeled_x_repeat, y_repeat, z_u)
-			log_px_u = self.log_px(a_u, unlabeled_x_repeat, y_repeat, z_u, test=test)
-			log_py_u = self.log_py(y_repeat)
+			log_pa_u = self.log_pa(a_u, a_mean_u, a_ln_var_u)
+			log_px_u = self.log_px(a_u, x_u, y_u, z_u, test=test)
+			log_py_u = self.log_py(y_u)
 			log_pz_u = self.log_pz(z_u)
 			log_qa_u = -self.gaussian_nll_keepbatch(a_u, a_mean_u, a_ln_var_u)	# 'gaussian_nll_keepbatch' returns the negative log-likelihood
 			log_qz_u = -self.gaussian_nll_keepbatch(z_u, z_mean_u, z_ln_var_u)
@@ -402,20 +399,22 @@ class DGM(object):
 			#                   .
 			#                   .
 			#  [LB(x_bs,0), LB(x_bs,1), ..., LB(x_bs,9)]]
-			if num_mc_samples > 1:
+			if num_mc_samples == 1:
+				lower_bound_u = F.transpose(F.reshape(lower_bound_u, (n_types_of_label, -1)))
+			else:
 				lower_bound_u = F.reshape(lower_bound_u, (n_types_of_label, num_mc_samples * batchsize_u))
 				lower_bound_u = F.transpose(lower_bound_u)
+
+			# take expectations w.r.t y
+			if num_mc_samples == 1:
+				x_u = self.to_variable(x_u_cpu_data)
 			else:
-				lower_bound_u = F.transpose(F.reshape(lower_bound_u, (n_types_of_label, -1)))
+				x_u = self.to_variable(np.repeat(x_u_cpu_data, num_mc_samples, axis=0))
 
-			# take expectations w.r.t 'y'
-			unlabeled_x_repeat = unlabeled_x
-			if num_mc_samples > 1:
-				unlabeled_x_repeat = self.to_variable(np.repeat(unlabeled_x_cpu_data, num_mc_samples, axis=0))
-
-			a_mean_u, a_ln_var_u = self.q_a_x(unlabeled_x_repeat, test=test)
+			a_mean_u, a_ln_var_u = self.q_a_x(x_u, test=test)
 			a_u = F.gaussian(a_mean_u, a_ln_var_u)
-			y_distribution = F.softmax(self.q_y_ax(a_u, unlabeled_x_repeat, test=test))
+			y_distribution = F.softmax(self.q_y_ax(a_u, x_u, test=test))
+
 			lower_bound_u = y_distribution * (lower_bound_u - F.log(y_distribution + 1e-6))
 
 			# take the average
@@ -474,7 +473,6 @@ class ADGM(DGM):
 		return F.gaussian(mean, ln_var)
 
 	def log_px(self, a, x, y, z, test=False):
-		a = self.to_variable(a)
 		x = self.to_variable(x)
 		y = self.to_variable(y)
 		z = self.to_variable(z)
@@ -558,6 +556,10 @@ class SDGM(DGM):
 		return F.gaussian(mean, ln_var)
 
 	def log_px(self, a, x, y, z, test=False):
+		a = self.to_variable(a)
+		x = self.to_variable(x)
+		y = self.to_variable(y)
+		z = self.to_variable(z)
 		# do not apply F.sigmoid to the output of the decoder
 		raw_output = self.p_x_ayz(a, y, z, test=test)
 		negative_log_likelihood = self.bernoulli_nll_keepbatch(x, raw_output)

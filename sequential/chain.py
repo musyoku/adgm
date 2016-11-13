@@ -143,7 +143,8 @@ class Chain(chainer.Chain):
 			print "loading {} ...".format(filename)
 			serializers.load_hdf5(filename, self)
 		else:
-			print filename, "not found."
+			pass
+			# print filename, "not found."
 
 	def save(self, filename):
 		if os.path.isfile(filename):
