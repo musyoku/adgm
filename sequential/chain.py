@@ -3,7 +3,7 @@ import os, time, math
 import sequential
 from link import _Merge, MinibatchDiscrimination, Gaussian
 import chainer
-from chainer import optimizers, serializers
+from chainer import optimizers, serializers, Variable
 from chainer import cuda
 from chainer import optimizer
 
@@ -100,7 +100,7 @@ class Eve(optimizer.GradientMethod):
 		if loss is None:
 			raise Exception()
 		self.loss = float(loss.data)
-		super(Eve, self).update()
+		super(Eve, self).update(loss)
 
 def get_optimizer(name, lr, momentum=0.9):
 	if name.lower() == "adam":
@@ -161,12 +161,17 @@ class Chain(chainer.Chain):
 		self.optimizer = opt
 
 	def backprop(self, loss):
-		self.optimizer.zero_grads()
-		loss.backward()
-		if isinstance(self.optimizer, Eve):
-			self.optimizer.update(loss)
+		# self.optimizer.zero_grads()
+		# loss.backward()
+		# if isinstance(self.optimizer, Eve):
+		# 	self.optimizer.update(loss)
+		# else:
+		# 	self.optimizer.update()
+		if isinstance(loss, Variable):
+			self.optimizer.update(lossfun=lambda: loss)
 		else:
-			self.optimizer.update()
+			self.optimizer.update(lossfun=loss)
+			
 
 	def __call__(self, *args, **kwargs):
 		return self.sequence(*args, **kwargs)
