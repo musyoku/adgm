@@ -52,7 +52,7 @@ else:
 	p_x_yz.add(BatchNormalization(500))
 	p_x_yz.add(Activation(config.nonlinearity))
 	p_x_yz.add(Linear(None, config.ndim_x, use_weightnorm=config.use_weightnorm))
-	p_x_yz.build()
+	# p_x_yz.build()
 
 	# p(a|x,y,z) - a ~ Gaussian
 	p_a_xyz = Sequential(weight_initializer=config.weight_initializer, weight_init_std=config.weight_init_std)
@@ -66,7 +66,7 @@ else:
 	p_a_xyz.add(BatchNormalization(500))
 	p_a_xyz.add(Activation(config.nonlinearity))
 	p_a_xyz.add(Gaussian(None, config.ndim_a))	# outputs mean and ln(var)
-	p_a_xyz.build()
+	# p_a_xyz.build()
 
 	# q(z|a,x,y) - z ~ Gaussian
 	q_z_axy = Sequential(weight_initializer=config.weight_initializer, weight_init_std=config.weight_init_std)
@@ -80,7 +80,7 @@ else:
 	q_z_axy.add(BatchNormalization(500))
 	q_z_axy.add(Activation(config.nonlinearity))
 	q_z_axy.add(Gaussian(None, config.ndim_z))	# outputs mean and ln(var)
-	q_z_axy.build()
+	# q_z_axy.build()
 
 	# q(a|x) - a ~ Gaussian
 	q_a_x = Sequential(weight_initializer=config.weight_initializer, weight_init_std=config.weight_init_std)
@@ -91,7 +91,7 @@ else:
 	q_a_x.add(BatchNormalization(500))
 	q_a_x.add(Activation(config.nonlinearity))
 	q_a_x.add(Gaussian(None, config.ndim_a))	# outputs mean and ln(var)
-	q_a_x.build()
+	# q_a_x.build()
 
 	# q(y|a,x) - y ~ Categorical
 	q_y_ax = Sequential(weight_initializer=config.weight_initializer, weight_init_std=config.weight_init_std)
@@ -102,7 +102,7 @@ else:
 	q_y_ax.add(BatchNormalization(500))
 	q_y_ax.add(Activation(config.nonlinearity))
 	q_y_ax.add(Linear(None, config.ndim_y, use_weightnorm=config.use_weightnorm))
-	q_y_ax.build()
+	# q_y_ax.build()
 
 	params = {
 		"config": config.to_dict(),

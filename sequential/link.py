@@ -187,6 +187,8 @@ class _Merge(object):
 
 	def __call__(self, *args):
 		output = 0
+		if len(args) != len(self.merge_layers):
+			raise Exception()
 		for i, data in enumerate(args):
 			output += self.merge_layers[i](data)
 		return output

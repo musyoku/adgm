@@ -190,12 +190,9 @@ class DGM(object):
 		kld = F.sum(mean * mean + var - ln_var - 1, axis=1) * 0.5
 		return kld
 
-	def log_pa_xyz(self, a, x, y, z, test=False):
-		a_mean, a_ln_var = self.p_a_xyz(x, y, z, test=test)
-		return log_pa(a, a_mean, a_ln_var)
-
-	def log_pa(self, a, a_mean, a_ln_var):
-		negative_log_likelihood = self.gaussian_nll_keepbatch(a, a_mean, a_ln_var)
+	def log_pa(self, a_q, x, y, z, test=False):
+		a_mean_p, a_ln_var_p = self.p_a_xyz(x, y, z, test=test)
+		negative_log_likelihood = self.gaussian_nll_keepbatch(a_q, a_mean_p, a_ln_var_p)
 		log_px_yz = -negative_log_likelihood
 		return log_px_yz
 
@@ -242,7 +239,7 @@ class DGM(object):
 		z_l = F.gaussian(z_mean_l, z_ln_var_l)
 
 		# compute lower bound
-		log_pa_l = self.log_pa(a_l, a_mean_l, a_ln_var_l)
+		log_pa_l = self.log_pa(a_l, x_l, y_l, z_l, test=test)
 		log_px_l = self.log_px(a_l, x_l, y_l, z_l, test=test)
 		log_py_l = self.log_py(y_l)
 		log_pz_l = self.log_pz(z_l)
@@ -269,7 +266,7 @@ class DGM(object):
 			z_u = F.gaussian(z_mean_u, z_ln_var_u)
 
 			# compute lower bound
-			log_pa_u = self.log_pa(a_u, a_mean_u, a_ln_var_u)
+			log_pa_u = self.log_pa(a_u, x_u, y_u, z_u, test=test)
 			log_px_u = self.log_px(a_u, x_u, y_u, z_u, test=test)
 			log_py_u = self.log_py(y_u)
 			log_pz_u = self.log_pz(z_u)
@@ -323,7 +320,7 @@ class DGM(object):
 		z_l = F.gaussian(z_mean_l, z_ln_var_l)
 
 		# compute lower bound
-		log_pa_l = self.log_pa(a_l, a_mean_l, a_ln_var_l)
+		log_pa_l = self.log_pa(a_l, x_l, y_l, z_l, test=test)
 		log_px_l = self.log_px(a_l, x_l, y_l, z_l, test=test)
 		log_py_l = self.log_py(y_l)
 		log_pz_l = self.log_pz(z_l)
@@ -369,7 +366,7 @@ class DGM(object):
 			z_u = F.gaussian(z_mean_u, z_ln_var_u)
 
 			# compute lower bound
-			log_pa_u = self.log_pa(a_u, a_mean_u, a_ln_var_u)
+			log_pa_u = self.log_pa(a_u, x_u, y_u, z_u, test=test)
 			log_px_u = self.log_px(a_u, x_u, y_u, z_u, test=test)
 			log_py_u = self.log_py(y_u)
 			log_pz_u = self.log_pz(z_u)
@@ -566,9 +563,9 @@ class SDGM(DGM):
 		log_px_yz = -negative_log_likelihood
 		return log_px_yz
 
-	def log_pa(self, a, x, y, z, test=False):
-		a_mean, a_ln_var = self.p_a_yz(y, z, test=test)
-		negative_log_likelihood = self.gaussian_nll_keepbatch(a, a_mean, a_ln_var)
+	def log_pa(self, a_q, x, y, z, test=False):
+		a_mean_p, a_ln_var_p = self.p_a_yz(y, z, test=test)
+		negative_log_likelihood = self.gaussian_nll_keepbatch(a_q, a_mean_p, a_ln_var_p)
 		log_px_yz = -negative_log_likelihood
 		return log_px_yz
 
