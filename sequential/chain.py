@@ -100,9 +100,9 @@ class Eve(optimizer.GradientMethod):
 		# Overwrites GradientMethod.update in order to get loss values
 		if lossfun is None:
 			raise RuntimeError('Eve.update requires lossfun to be specified')
-			loss_var = lossfun(*args, **kwds)
-			self.loss = float(loss_var.data)
-			super(Eve, self).update(lossfun=lambda: loss_var)
+		loss_var = lossfun(*args, **kwds)
+		self.loss = float(loss_var.data)
+		super(Eve, self).update(lossfun=lambda: loss_var)
 
 def get_optimizer(name, lr, momentum=0.9):
 	if name.lower() == "adam":
