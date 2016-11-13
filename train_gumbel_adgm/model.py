@@ -29,8 +29,8 @@ else:
 	config.ndim_x = 28 * 28
 	config.ndim_y = 10
 	config.ndim_z = 100
-	config.weight_init_std = 0.001
-	config.weight_initializer = "GlorotNormal"
+	config.weight_init_std = 0.01
+	config.weight_initializer = "Normal"
 	config.nonlinearity = "elu"
 	config.optimizer = "Adam"
 	config.learning_rate = 0.0003

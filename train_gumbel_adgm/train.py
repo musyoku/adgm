@@ -21,6 +21,7 @@ def main():
 	num_trains_per_epoch = 500
 	batchsize_l = 100
 	batchsize_u = 100
+	alpha = 1
 
 	# seed
 	np.random.seed(args.seed)
@@ -66,7 +67,7 @@ def main():
 			# classification loss
 			a_l = adgm.encode_x_a(images_l, False)
 			unnormalized_y_distribution = adgm.encode_ax_y_distribution(a_l, images_l, softmax=False)
-			loss_classifier = F.softmax_cross_entropy(unnormalized_y_distribution, adgm.to_variable(label_ids_l))
+			loss_classifier = alpha * F.softmax_cross_entropy(unnormalized_y_distribution, adgm.to_variable(label_ids_l))
 			adgm.backprop_classifier(loss_classifier)
 
 			sum_lower_bound_l += float(lb_labeled.data)
