@@ -1,11 +1,11 @@
 import numpy as np
-import os, time, math, collections
-import sequential
-from link import _Merge, MinibatchDiscrimination, Gaussian
+import os, time, math, collections, six
 import chainer
 from chainer import optimizers, serializers, Variable
 from chainer import cuda
 from chainer import optimizer
+import sequential
+import links
 
 def sum_sqnorm(arr):
 	sq_sum = collections.defaultdict(float)
@@ -134,12 +134,12 @@ class Chain(chainer.Chain):
 		for i, link in enumerate(sequence.links):
 			if isinstance(link, chainer.link.Link):
 				self.add_link("{}_{}".format(name, i), link)
-			elif isinstance(link, Gaussian):
+			elif isinstance(link, links.Gaussian):
 				self.add_link("{}_{}_ln_var".format(name, i), link.layer_ln_var)
 				self.add_link("{}_{}_mean".format(name, i), link.layer_mean)
-			elif isinstance(link, MinibatchDiscrimination):
+			elif isinstance(link, links.MinibatchDiscrimination):
 				self.add_link("{}_{}".format(name, i), link.T)
-			elif isinstance(link, _Merge):
+			elif isinstance(link, links.Merge):
 				for l, layer in enumerate(link.merge_layers):
 					self.add_link("{}_{}_{}".format(name, i, l), layer)
 

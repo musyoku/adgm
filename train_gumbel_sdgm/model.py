@@ -6,8 +6,8 @@ from args import args
 sys.path.append(os.path.split(os.getcwd())[0])
 from adgm import SDGM, Config
 from sequential import Sequential
-from sequential.link import Linear, Merge, BatchNormalization, Gaussian
-from sequential.function import Activation, dropout, gaussian_noise, tanh, sigmoid
+from sequential.layers import Linear, Merge, BatchNormalization, Gaussian
+from sequential.functions import Activation, dropout, gaussian_noise, tanh, sigmoid
 
 try:
 	os.mkdir(args.model_dir)
