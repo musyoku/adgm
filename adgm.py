@@ -469,7 +469,7 @@ class ADGM(DGM):
 		self.q_z_axy = sequential.from_dict(params["q_z_axy"])
 		self.chain.add_sequence_with_name(self.q_z_axy, "q_z_axy")
 
-		self.chain.setup_optimizers(config.optimizer, config.learning_rate, config.momentum)
+		self.chain.setup_optimizers(config.optimizer, config.learning_rate, config.momentum, config.weight_decay, config.gradient_clipping)
 
 	def decode_yz_x(self, y, z, test=False):
 		y = self.to_variable(y)
@@ -510,7 +510,7 @@ class SDGM(DGM):
 		self.q_z_axy = sequential.from_dict(params["q_z_axy"])
 		self.chain.add_sequence_with_name(self.q_z_axy, "q_z_axy")
 
-		self.chain.setup_optimizers(config.optimizer, config.learning_rate, config.momentum)
+		self.chain.setup_optimizers(config.optimizer, config.learning_rate, config.momentum, config.weight_decay, config.gradient_clipping)
 
 	def decode_ayz_x(self, a, y, z, test=False):
 		a = self.to_variable(a)
