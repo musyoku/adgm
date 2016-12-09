@@ -31,7 +31,7 @@ else:
 	config.ndim_z = 100
 	config.weight_init_std = 0.01
 	config.weight_initializer = "Normal"
-	config.nonlinearity = "elu"
+	config.nonlinearity = "relu"
 	config.optimizer = "Adam"
 	config.learning_rate = 0.0003
 	config.momentum = 0.9

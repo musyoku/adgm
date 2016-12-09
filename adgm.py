@@ -121,6 +121,15 @@ class DGM(object):
 			return F.softmax(unnormalized_distribution)
 		return unnormalized_distribution
 
+	def encode_x_y_distribution(self, x, test=False, softmax=True):
+		x = self.to_variable(x)
+		mean, ln_var = self.q_a_x(x, test=test)
+		a = F.gaussian(mean, ln_var)
+		y = self.q_y_ax(a, x, test=test)
+		if softmax:
+			return F.softmax(y)
+		return y
+
 	def sample_x_y(self, x, argmax=False, test=False):
 		x = self.to_variable(x)
 		mean, ln_var = self.q_a_x(x, test=test)
