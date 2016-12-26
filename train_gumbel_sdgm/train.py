@@ -89,8 +89,8 @@ def main():
 		validation_accuracy = sum_accuracy / len(images_l_segments)
 		
 		progress.show(num_trains_per_epoch, num_trains_per_epoch, {
-			"lb_u": sum_lower_bound_l / num_trains_per_epoch,
-			"lb_l": sum_lower_bound_u / num_trains_per_epoch,
+			"lb_u": sum_lower_bound_u / num_trains_per_epoch,
+			"lb_l": sum_lower_bound_l / num_trains_per_epoch,
 			"loss_spv": sum_loss_classifier / num_trains_per_epoch,
 			"accuracy": validation_accuracy,
 			"tmp": temperature,
